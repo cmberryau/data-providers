@@ -357,7 +357,7 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
                 //_insertNodeCmd.Transaction.Commit();
                 //_insertWayCmd.Transaction.Commit();
                 //_insertRelationCmd.Transaction.Commit();
-                if (!string.IsNullOrWhiteSpace(_connectionString))
+                if (!_connectionString.IsNullOrWhiteSpace())
                 { // the connection was created here, it needs to be destroyed here.
                     _connection.Close();
                     _connection.Dispose();
