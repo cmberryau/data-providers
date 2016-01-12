@@ -16,15 +16,19 @@
 // You should have received a copy of the GNU General Public License
 // along with OsmSharp. If not, see <http://www.gnu.org/licenses/>.
 
+using OsmSharp.Collections.Tags;
+using OsmSharp.Math.Geo;
+using OsmSharp.Osm;
+using OsmSharp.Osm.Cache;
+using OsmSharp.Osm.Collections;
+using OsmSharp.Osm.Data;
+using OsmSharp.Osm.Filters;
+using OsmSharp.Osm.Tiles;
 using System;
 using System.Collections.Generic;
 using System.Data.SQLite;
 using System.Linq;
-using OsmSharp.Math.Geo;
-using OsmSharp.Osm;
-using OsmSharp.Osm.Data;
-using OsmSharp.Collections.Tags;
-using System.Data;
+using System.Text;
 
 namespace OsmSharp.Data.SQLite.Osm
 {
@@ -32,891 +36,1620 @@ namespace OsmSharp.Data.SQLite.Osm
     /// An SQLite data source.
     /// </summary>
 	public class SQLiteDataSource : DataSourceReadOnlyBase, IDisposable
-	{
+    {
         /// <summary>
-        /// Holds the connection string.
+        /// Not supported.
         /// </summary>
-		private readonly string _connectionString;
-
-        /// <summary>
-        /// The unique id for this datasource.
-        /// </summary>
-		private readonly Guid _id;
-
-        /// <summary>
-        /// Creates a new SQLite simple data source.
-        /// </summary>
-        /// <param name="connectionString"></param>
-        public SQLiteDataSource(string connectionString)
-		{
-			_connectionString = connectionString;
-			_id = Guid.NewGuid();
-		}
-
-        /// <summary>
-        /// Creates a new SQLite simple data source using an existing connection.
-        /// </summary>
-        /// <param name="connection"></param>
-        public SQLiteDataSource(SQLiteConnection connection)
+        public override GeoCoordinateBox BoundingBox
         {
-            _connection = connection;
+            get
+            {
+                throw new NotSupportedException();
+            }
         }
 
         /// <summary>
-        /// Holds the connection.
+        /// Returns the name.
         /// </summary>
-		private SQLiteConnection _connection;
+        public string Name
+        {
+            get
+            {
+                return "SQLite data source";
+            }
+        }
 
         /// <summary>
-        /// Creates/get the connection.
-        /// </summary>
-        /// <returns></returns>
-		private SQLiteConnection CreateConnection()
-		{
-			if (_connection == null)
-			{
-				_connection = new SQLiteConnection(_connectionString);
-				_connection.Open();
-			}
-			return _connection;
-		}
-
-		#region IDataSourceReadOnly Members
-
-        /// <summary>
-        /// Returns the boundingbox of this data if any.
-        /// </summary>
-		public override GeoCoordinateBox BoundingBox
-		{
-			get
-			{
-				throw new NotSupportedException();
-			}
-		}
-
-        /// <summary>
-        /// Returns the name of this data source.
-        /// </summary>
-		public string Name
-		{
-			get
-			{
-				return "SQLite Data Source";
-			}
-		}
-
-        /// <summary>
-        /// Returns the id of this data source.
+        /// Returns the id.
         /// </summary>
         public override Guid Id
-		{
-			get
-			{
-				return _id;
-			}
-		}
+        {
+            get
+            {
+                return _id;
+            }
+        }
 
         /// <summary>
-        /// Returns a value that indicates if the boundingbox is available or not.
+        /// Returns false; database sources have no bounding box.
         /// </summary>
-		public override bool HasBoundinBox
-		{
-			get
-			{
-				return false;
-			}
-		}
+        public override bool HasBoundingBox
+        {
+            get
+            {
+                return false;
+            }
+        }
 
         /// <summary>
-        /// Returns all the nodes for the given ids.
+        /// Return true; source is readonly.
         /// </summary>
-        /// <param name="ids"></param>
-        /// <returns></returns>
+        public override bool IsReadOnly
+        {
+            get
+            {
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// The default zoom level that this data source reads at
+        /// </summary>
+        // TODO: remark as override
+        public int DefaultZoomLevel
+        {
+            get
+            {
+
+                return SQLiteSchemaTools.DefaultTileZoomLevel;
+            }
+        }
+
+        /// <summary>
+        /// Returns true if this datasource supports concurrent copies.
+        /// </summary>
+        public bool SupportsConcurrentCopies
+        {
+            get
+            {
+                return true;
+            }
+        }
+
+
+        /// <summary>
+        /// Does this object own it's own connection?
+        /// </summary>
+        public bool OwnsConnection
+        {
+            get
+            {
+                return _connection_owner;
+            }
+
+            set
+            {
+                _connection_owner = value;
+            }
+        }
+
+        private SQLiteConnection _connection;
+        private readonly string _connection_string;
+        private bool _connection_owner;
+        private readonly bool _create_and_detect_schema;
+        private readonly Guid _id;
+
+        private readonly OsmDataCache _geo_cache;
+        private readonly ConcurrentTagsCollectionCache _tags_cache;
+
+        #region command strings
+
+        private const string SELECT_NODES_STUB = @"SELECT " +
+                                                     @"node.id, " +
+                                                     @"node.latitude, " +
+                                                     @"node.longitude, " +
+                                                     @"node.name " +
+                                                 @"FROM " +
+                                                     @"node ";
+
+        private const string SELECT_NODES = SELECT_NODES_STUB + @"WHERE " +
+                                                                    @"node.id " +
+                                                                @"IN ({0});";
+
+        private const string SELECT_NODES_FROM_TILES = SELECT_NODES_STUB + @"WHERE " +
+                                                                               @"node.tile " +
+                                                                           @"IN ({0});";
+
+        private const string SELECT_NODES_FROM_TILES_AND_GEO_COORDS = SELECT_NODES_STUB +
+                                                                      @"WHERE node.tile IN ({0})" +
+                                                                      @"AND (node.latitude >= {1} " +
+                                                                      @"AND node.latitude < {2} " +
+                                                                      @"AND node.longitude >= {3} " +
+                                                                      @"AND node.longitude < {4});";
+
+        private const string SELECT_TAGS = @"SELECT " +
+                                               @"{0}_tags.tag_key, " +
+                                               @"{0}_tags.value " +
+                                           @"FROM " +
+                                               @"{0}_tags " +
+                                           @"WHERE {0}_tags.id IN ({1});";
+
+        private const string SELECT_GEO_TAG_IDS = @"SELECT " +
+                                                      @"{0}.id, " +
+                                                      @"{0}.tags_id " +
+                                                  @"FROM " +
+                                                      @"{0} " +
+                                                  @"WHERE " +
+                                                      @"{0}.id " +
+                                                  @"IN " +
+                                                      @"({1}) " +
+                                                  @"AND " +
+                                                      @"{0}.tags_id " +
+                                                  @"IS " +
+                                                      @"NOT NULL;";
+
+        private const string SELECT_TAGS_ID = @"SELECT " +
+                                                   @"{0}_tags.id, " +
+                                                   @"{0}_tags.tag_key, " +
+                                                   @"{0}_tags.value " +
+                                               @"FROM " +
+                                                   @"{0}_tags " +
+                                               @"WHERE {0}_tags.id IN ({1});";
+
+        private const string SELECT_WAYS = @"SELECT " +
+                                                @"way.id, " +
+                                                @"way.name " +
+                                            @"FROM " +
+                                                @"way " +
+                                            @"WHERE way.id IN ({0});";
+
+        private const string SELECT_WAY_NODE_IDS = @"SELECT " +
+                                                        @"way_nodes.node_id " +
+                                                   @"FROM " +
+                                                        @"way_nodes " +
+                                                   @"WHERE way_nodes.way_id IN ({0}) " +
+                                                   @"ORDER BY way_nodes.sequence_id;";
+
+        private const string SELECT_WAYS_IDS_NODES = @"SELECT " +
+                                                         @"way_nodes.way_id, " +
+                                                         @"way_nodes.node_id " +
+                                                     @"FROM " +
+                                                         @"way_nodes " +
+                                                     @"WHERE way_nodes.way_id IN ({0}) " +
+                                                     @"ORDER BY way_nodes.sequence_id;";
+
+        private const string SELECT_WAYS_FROM_NODES = @"SELECT " +
+                                                          @"way_nodes.way_id " +
+                                                      @"FROM " +
+                                                          @"way_nodes " +
+                                                      @"WHERE way_nodes.node_id IN ({0});";
+
+        private const string SELECT_RELATIONS = @"SELECT " +
+                                                    @"relation.id, " +
+                                                    @"relation.name " +
+                                                @"FROM " +
+                                                    @"relation " +
+                                                @"WHERE relation.id IN ({0});";
+
+        private const string SELECT_RELATION_MEMBERS = @"SELECT " +
+                                                           @"relation_members.member_type, " +
+                                                           @"relation_members.member_id, " +
+                                                           @"relation_members.member_role " +
+                                                       @"FROM " +
+                                                           @"relation_members " +
+                                                       @"WHERE relation_members.relation_id IN ({0}) " +
+                                                       @"ORDER BY relation_members.sequence_id;";
+
+        private const string SELECT_RELATIONS_IDS_MEMBERS = @"SELECT " +
+                                                                @"relation_members.relation_id, " +
+                                                                @"relation_members.member_type, " +
+                                                                @"relation_members.member_id, " +
+                                                                @"relation_members.member_role " +
+                                                            @"FROM " +
+                                                                @"relation_members " +
+                                                            @"WHERE relation_members.relation_id IN ({0}) " +
+                                                            @"ORDER BY relation_members.sequence_id;";
+
+        private const string SELECT_RELATIONS_FOR_MEMBER = @"SELECT " +
+                                                               @"relation_members.relation_id " +
+                                                           @"FROM " +
+                                                               @"relation_members " +
+                                                           @"WHERE relation_members.member_id IN ({0}) " +
+                                                           @"AND relation_members.member_type = {1};";
+
+        private const string SELECT_GEO_IDS_GIVEN_TAGS = @"SELECT " +
+                                                            @"{0}.id " +
+                                                        @"FROM " +
+                                                            @"{0} " +
+                                                        @"WHERE " +
+                                                            @"{0}.tags_id " +
+                                                        @"IN " +
+                                                            @"( " +
+                                                                @"SELECT " +
+                                                                    @"{0}_tags.id " +
+                                                                @"FROM " +
+                                                                    @"{0}_tags " +
+                                                                @"WHERE " +
+                                                                    @"{0}_tags.tag_key " +
+                                                                @"IS " +
+                                                                    @"'{1}' " +
+                                                                @"AND " +
+                                                                    @"{0}_tags.value " +
+                                                                @"IN " +
+                                                                @"( " +
+                                                                    @"{2} " +
+                                                                @") " +
+                                                            @");";
+
+        private const string SELECT_UNIQUE_TAGS_FOR_TYPE = @"SELECT " +
+                                                             @"{0}_tags.id, {0}_tags.tag_key, {0}_tags.value " +
+                                                           @"FROM " +
+                                                             @"{0}_tags;";
+
+        private const string SELECT_UNIQUE_TAGS_FOR_TYPE_GIVEN_KEYS = @"SELECT " +
+                                                                        @"{0}_tags.id, {0}_tags.tag_key, {0}_tags.value " +
+                                                                      @"FROM " +
+                                                                        @"{0}_tags " +
+                                                                      @"WHERE " +
+                                                                        @"{0}_tags.tag_key " +
+                                                                      @"IN " +
+                                                                        @"( " +
+                                                                          @"{1} " +
+                                                                        @");";
+
+        private const string UNION = @"UNION";
+
+        #endregion command strings
+
+        /// <summary>
+        /// Creates a new SQLite data source
+        /// </summary>
+        /// <param name="connection_string">The connection string for the SQLite db</param>
+        /// <param name="create_schema">Do the db schema and tables need to be created?</param>
+        public SQLiteDataSource(string connection_string, bool create_schema = false)
+        {
+            _connection_string = connection_string;
+            _create_and_detect_schema = create_schema;
+
+            _connection = EnsureConnection();
+
+            _geo_cache = new ConcurrentOsmDataCacheMemory();
+            _tags_cache = new ConcurrentTagsCollectionCache();
+            _id = Guid.NewGuid();
+        }
+
+        /// <summary>
+        /// Creates a new SQLite source
+        /// </summary>
+        /// <param name="in_memory">Is the DB in memory? (default is false)</param>
+        /// <param name="path">The path to the DB, or its descriptor in memory (if any)</param>
+        /// <param name="password">The DB password (if any)</param>
+        /// <param name="create_schema">Do the db tables need to be created?</param>
+        public SQLiteDataSource(bool in_memory = false, string path = null,
+                                string password = null, bool create_schema = false)
+        {
+            // create the connection string
+            _connection_string = SQLiteSchemaTools.BuildConnectionString(in_memory, path, password);
+            _create_and_detect_schema = create_schema;
+            _connection = EnsureConnection();
+
+            _geo_cache = new ConcurrentOsmDataCacheMemory();
+            _tags_cache = new ConcurrentTagsCollectionCache();
+            _id = Guid.NewGuid();
+        }
+
+        /// <summary>
+        /// Creates a new SQLite data source
+        /// </summary>
+        /// <param name="connection">The SQLite connection</param>
+        /// <param name="create_schema">Do the db schema and tables need to be created?</param>
+        public SQLiteDataSource(SQLiteConnection connection, bool create_schema = false)
+        {
+            _connection = connection;
+            _create_and_detect_schema = create_schema;
+            _connection_string = connection.ConnectionString;
+            // validate the connection
+            _connection = EnsureConnection();
+
+            _geo_cache = new ConcurrentOsmDataCacheMemory();
+            _tags_cache = new ConcurrentTagsCollectionCache();
+            _id = Guid.NewGuid();
+        }
+
+        private SQLiteDataSource(string connection_string, OsmDataCache geo_cache,
+            ConcurrentTagsCollectionCache tags_cache)
+        {
+            _connection_string = connection_string;
+            _connection = EnsureConnection();
+
+            _tags_cache = tags_cache;
+            _geo_cache = geo_cache;
+            _id = Guid.NewGuid();
+        }
+
+        /// <summary>
+        /// Provides a copy of the object that is safe to be read at the same time
+        /// </summary>
+        // TODO: remark as override
+        public IDataSourceReadOnly ConcurrentCopy()
+        {
+            return new SQLiteDataSource(_connection_string, _geo_cache, _tags_cache);
+        }
+
+        #region public node queries
+
+        /// <summary>
+        /// Returns all the nodes matching the passed ids
+        /// </summary>
+        /// <param name="ids">The list of ids to search the db for</param>
+        /// <returns>Nodes which match the ids given</returns>
         public override IList<Node> GetNodes(IList<long> ids)
-		{
-			IList<Node> returnList = new List<Node>();
-			if (ids.Count > 0)
-			{
-				// initialize connection.
-				SQLiteConnection con = CreateConnection();
+        {
+            return GetNodesGivenSQL(ids, SELECT_NODES);
+        }
 
-				//id	latitude	longitude	changeset_id	visible	timestamp	tile	version
-                Dictionary<long, Node> nodes = new Dictionary<long, Node>();
-				for (int idx_1000 = 0; idx_1000 <= ids.Count / 1000; idx_1000++)
-				{
-					int start_idx = idx_1000 * 1000;
-					int stop_idx = System.Math.Min((idx_1000 + 1) * 1000, ids.Count);
-					string ids_string = ConstructIdList(ids, start_idx, stop_idx);
-					if (ids_string.Length > 0)
-					{
-						string sql = "SELECT node.id, node.latitude, node.longitude, node.changeset_id, node.timestamp, node.version, " +
-                                                 "node_tags.key, node_tags.value, node.usr, node.usr_id, node.visible " +
-												 "FROM node " +
-												 "LEFT JOIN node_tags ON node_tags.node_id = node.id " +
-												 "WHERE (node.id IN ({0})) ";
-						sql = string.Format(sql, ids_string);
+        /// <summary>
+        /// Returns all the nodes for the given tile range
+        /// </summary>
+        /// <param name="range">The tile range to match nodes against</param>
+        /// <returns>The list of matching nodes from the db</returns>
+        public IList<Node> GetNodes(TileRange range)
+        {
+            var tile_ids = SchemaTools.ConstructIdList(range);
 
-						using (SQLiteCommand com = new SQLiteCommand(sql))
-						{
-							com.Connection = con;
-                            using (SQLiteDataReader reader = ExecuteReader(com))
+            return GetNodesForTiles(tile_ids);
+        }
+
+        /// <summary>
+        /// Returns all the nodes within the given coordinate box
+        /// </summary>
+        /// <param name="box">The coordinate box to match against</param>
+        /// <returns>The list of matching nodes from the db</returns>
+        public IList<Node> GetNodes(GeoCoordinateBox box)
+        {
+            var tile_range = TileRange.CreateAroundBoundingBox(box, SQLiteSchemaTools.DefaultTileZoomLevel);
+
+            var tile_ids = SchemaTools.ConstructIdList(tile_range);
+
+            return GetNodesGivenSQL(tile_ids, SELECT_NODES_FROM_TILES_AND_GEO_COORDS,
+                                    SQLiteSchemaTools.GeoToDB(box.MinLat), SQLiteSchemaTools.GeoToDB(box.MaxLat),
+                                    SQLiteSchemaTools.GeoToDB(box.MinLon), SQLiteSchemaTools.GeoToDB(box.MaxLon));
+        }
+
+        /// <summary>
+        /// Returns all the nodes for the given tiles
+        /// </summary>
+        /// <param name="tile_ids"></param>
+        /// <returns></returns>
+        public IList<Node> GetNodesForTiles(IList<long> tile_ids)
+        {
+            return GetNodesGivenSQL(tile_ids, SELECT_NODES_FROM_TILES);
+        }
+
+        /// <summary>
+        /// Returns all the nodes for the given tiles
+        /// </summary>
+        /// <param name="tiles"></param>
+        /// <returns></returns>
+        public IList<Node> GetNodesForTiles(IList<Tile> tiles)
+        {
+            var tile_ids = new List<long>();
+
+            foreach (var tile in tiles)
+            {
+                tile_ids.Add((long)tile.Id);
+            }
+
+            return GetNodesForTiles(tile_ids);
+        }
+
+        /// <summary>
+        /// Returns the node ids for the given ways
+        /// </summary>
+        public IList<Node> GetNodesForWayIds(IList<long> way_ids)
+        {
+            // fetch the node ids first
+            var node_ids = GetIds(way_ids, SELECT_WAY_NODE_IDS);
+
+            return GetNodesGivenSQL(node_ids, SELECT_NODES);
+        }
+
+        #endregion public node queries
+
+        #region public way queries
+
+        /// <summary>
+        /// Returns all ways but use the existing nodes to fill the Nodes-lists.
+        /// </summary>
+        /// <param name="way_ids"></param>
+        /// <returns></returns>
+        public override IList<Way> GetWays(IList<long> way_ids)
+        {
+            var return_list = _geo_cache.GetWaysList(way_ids, out way_ids);
+
+            if (way_ids.Count > 0)
+            {
+                var ways = new Dictionary<long, Way>();
+                for (var index = 0; index <= way_ids.Count / 1000; index++)
+                {
+                    var start = index * 1000;
+                    var end = System.Math.Min((index + 1) * 1000, way_ids.Count);
+                    var ids = SchemaTools.ConstructIdList(way_ids, start, end);
+
+                    if (ids.Length > 0)
+                    {
+                        var sql = string.Format(SELECT_WAYS, ids);
+
+                        using (var command = new SQLiteCommand(sql, EnsureConnection()))
+                        {
+                            using (var reader = command.ExecuteReader())
                             {
                                 while (reader.Read())
                                 {
-                                    // load/parse data.
-                                    long returned_id = reader.GetInt64(0);
+                                    var way = ReadWay(reader);
 
-                                    Node node;
-                                    if (!nodes.TryGetValue(returned_id, out node))
+                                    if (!ways.ContainsKey(way.Id.Value))
                                     {
-                                        node = new Node();
-                                        node.Id = returned_id;
-                                        int latitude_int = reader.GetInt32(1);
-                                        int longitude_int = reader.GetInt32(2);
-                                        node.ChangeSetId = reader.IsDBNull(3) ? null : (long?)reader.GetInt64(3);
-                                        node.TimeStamp = reader.IsDBNull(4) ? null : (DateTime?)this.ConvertDateTime(reader.GetInt64(4));
-                                        node.Version = reader.IsDBNull(5) ? null : (ulong?)reader.GetInt64(5);
-                                        node.Latitude = latitude_int / 10000000.0;
-                                        node.Longitude = longitude_int / 10000000.0;
-                                        node.UserName = reader.IsDBNull(8) ? null : reader.GetString(8);
-                                        node.UserId = reader.IsDBNull(9) ? null : (long?)reader.GetInt64(9);
-                                        node.Visible = reader.IsDBNull(10) ? null : (bool?)reader.GetBoolean(10);
-
-                                        nodes.Add(node.Id.Value, node);
-                                    }
-
-                                    if (!reader.IsDBNull(6))
-                                    {
-                                        if (node.Tags == null)
-                                        {
-                                            node.Tags = new TagsCollection();
-                                        }
-                                        string key = reader.GetString(6);
-                                        string value = reader.GetString(7);
-                                        node.Tags.Add(key, value);
+                                        ways.Add(way.Id.Value, way);
                                     }
                                 }
+
                                 reader.Close();
                             }
-						}
-					}
-				}
+                        }
 
-                // TODO: sort the returnlist??
-				returnList = nodes.Values.ToList();
-			}
-			return returnList;
-		}
+                        GetTags(EnsureConnection(), ways);
+                        GetWaysNodes(EnsureConnection(), ids, ways);
+                    }
+                }
+
+                return_list.AddRange(ways.Values.ToList());
+            }
+
+            return return_list;
+        }
+
+        /// <summary>
+        /// Returns all ways but use the existing nodes to fill the Nodes-lists.
+        /// </summary>
+        /// <param name="nodes">List of nodes to find ways for</param>
+        /// <returns>List of ways that contain the passed nodes</returns>
+        public IList<Way> GetWays(IList<Node> nodes)
+        {
+            if (nodes.Count > 0)
+            {
+                var node_id_list = new List<long>();
+
+                foreach (Node node in nodes)
+                {
+                    node_id_list.Add((long)node.Id);
+                }
+
+                return GetWaysFor(node_id_list);
+            }
+
+            return new List<Way>();
+        }
+
+        /// <summary>
+        /// Returns all ways using the given node.
+        /// </summary>
+        /// <param name="node_id"></param>
+        /// <returns></returns>
+        public override IList<Way> GetWaysFor(long node_id)
+        {
+            var node_ids = new List<long>();
+            node_ids.Add(node_id);
+
+            return GetWaysFor(node_ids);
+        }
+
+        /// <summary>
+        /// Returns all ways using any of the given nodes.
+        /// </summary>
+        /// <param name="node_ids"></param>
+        /// <returns></returns>
+        public IList<Way> GetWaysFor(List<long> node_ids)
+        {
+            if (node_ids.Count > 0)
+            {
+                var node_ids_string = SchemaTools.ConstructIdList(node_ids);
+                var sql = string.Format(SELECT_WAYS_FROM_NODES, node_ids_string);
+                var way_ids = new List<long>();
+
+                using (var command = new SQLiteCommand(sql, EnsureConnection()))
+                {
+                    using (var reader = command.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            way_ids.Add(ReadOneInt64(reader));
+                        }
+                    }
+                }
+
+                return GetWays(way_ids);
+            }
+
+            return new List<Way>();
+        }
+
+        #endregion public way queries
+
+        #region public relation queries
 
         /// <summary>
         /// Returns the relations for the given ids.
         /// </summary>
-        /// <param name="ids"></param>
+        /// <param name="relation_ids"></param>
         /// <returns></returns>
-        public override IList<Relation> GetRelations(IList<long> ids)
+        public override IList<Relation> GetRelations(IList<long> relation_ids)
         {
-            if (ids.Count > 0)
+            var return_list = _geo_cache.GetRelationsList(relation_ids, out relation_ids);
+
+            if (relation_ids.Count > 0)
             {
-                SQLiteConnection con = this.CreateConnection();
-
-                // STEP2: Load ways.
-                Dictionary<long, Relation> relations = new Dictionary<long, Relation>();
-                string sql;
-                SQLiteCommand com;
-                SQLiteDataReader reader;
-                for (int idx_1000 = 0; idx_1000 <= ids.Count / 1000; idx_1000++)
+                var relations = new Dictionary<long, Relation>();
+                for (var index = 0; index <= relation_ids.Count / 1000; index++)
                 {
-                    int start_idx = idx_1000 * 1000;
-                    int stop_idx = System.Math.Min((idx_1000 + 1) * 1000, ids.Count);
+                    var start = index * 1000;
+                    var end = System.Math.Min((index + 1) * 1000, relation_ids.Count);
+                    var ids = SchemaTools.ConstructIdList(relation_ids, start, end);
 
-                    sql = "SELECT id, changeset_id, visible, timestamp, version, usr, usr_id FROM relation WHERE (id IN ({0})) ";
-                    string ids_string = this.ConstructIdList(ids, start_idx, stop_idx);
-                    if (ids_string.Length > 0)
+                    if (ids.Length > 0)
                     {
-                        sql = string.Format(sql, ids_string);
-                        com = new SQLiteCommand(sql);
-                        com.Connection = con;
-                        reader = ExecuteReader(com);
-                        Relation relation;
-                        while (reader.Read())
+                        var sql = string.Format(SELECT_RELATIONS, ids);
+                        using (var command = new SQLiteCommand(sql, EnsureConnection()))
                         {
-                            long id = reader.GetInt64(0);
-                            long? changeset_id = reader.IsDBNull(1) ? null : (long?)reader.GetInt64(1);
-                            bool? visible = reader.IsDBNull(2) ? null : (bool?)reader.GetBoolean(2);
-                            DateTime? timestamp = reader.IsDBNull(3) ? null : (DateTime?)this.ConvertDateTime(reader.GetInt64(3));
-                            ulong? version = reader.IsDBNull(4) ? null : (ulong?)reader.GetInt64(4);
-                            string user = reader.IsDBNull(5) ? null : reader.GetString(5);
-                            long? user_id = reader.IsDBNull(6) ? null : (long?)reader.GetInt64(6);
-
-                            // create way.
-                            relation = new Relation();
-                            relation.Id = id;
-                            relation.Version = version;
-                            relation.UserName = user;
-                            relation.UserId = user_id;
-                            relation.Visible = visible;
-                            relation.TimeStamp = timestamp;
-                            relation.ChangeSetId = changeset_id;
-
-                            relations.Add(relation.Id.Value, relation);
-                        }
-                        reader.Close();
-                    }
-                }
-
-                //STEP3: Load all relation-member relations
-                List<long> missing_node_ids = new List<long>();
-                for (int idx_1000 = 0; idx_1000 <= ids.Count / 1000; idx_1000++)
-                {
-                    int start_idx = idx_1000 * 1000;
-                    int stop_idx = System.Math.Min((idx_1000 + 1) * 1000, ids.Count);
-
-                    sql = "SELECT relation_id, member_type, member_id, member_role, sequence_id FROM relation_members WHERE (relation_id IN ({0})) ORDER BY sequence_id";
-                    string ids_string = this.ConstructIdList(ids, start_idx, stop_idx);
-                    if (ids_string.Length > 0)
-                    {
-                        sql = string.Format(sql, ids_string);
-                        com = new SQLiteCommand(sql);
-                        com.Connection = con;
-                        reader = ExecuteReader(com);
-                        while (reader.Read())
-                        {
-                            long relation_id = reader.GetInt64(0);
-                            long member_type = reader.GetInt64(1);
-                            long? member_id = reader.IsDBNull(2) ? null : (long?)reader.GetInt64(2);
-                            string member_role = reader.IsDBNull(3) ? null : reader.GetString(3);
-
-                            Relation relation;
-                            if (relations.TryGetValue(relation_id, out relation))
+                            using (var reader = command.ExecuteReader())
                             {
-                                if (relation.Members == null)
+                                while (reader.Read())
                                 {
-                                    relation.Members = new List<RelationMember>();
-                                }
-                                RelationMember member = new RelationMember();
-                                member.MemberId = member_id;
-                                member.MemberRole = member_role;
-                                member.MemberType = this.ConvertMemberType(member_type);
+                                    var relation = ReadRelation(reader);
 
-                                relation.Members.Add(member);
+                                    if (!relations.ContainsKey(relation.Id.Value))
+                                    {
+                                        relations.Add(relation.Id.Value, relation);
+                                    }
+                                }
+
+                                reader.Close();
                             }
                         }
-                        reader.Close();
+
+                        GetTags(EnsureConnection(), relations);
+                        GetRelationsMembers(EnsureConnection(), ids, relations);
                     }
                 }
 
-                //STEP4: Load all tags.
-                for (int idx_1000 = 0; idx_1000 <= ids.Count / 1000; idx_1000++)
+                return_list.AddRange(relations.Values.ToList());
+            }
+
+            return return_list;
+        }
+
+        /// <summary>
+        /// Returns the relations that contain any of the geos
+        /// </summary>
+        /// <param name="geos">The geometries to be searched against</param>
+        /// <returns>A list of relations that contain any of the geos passed</returns>
+        public IList<Relation> GetRelationsFor(IList<OsmGeo> geos)
+        {
+            var relations = new List<Relation>();
+
+            if (geos.Count > 0)
+            {
+                var relation_ids = new HashSet<long>();
+
+                relations = GetRelationsForBatch(geos);
+
+                // todo : push down into sql fetch stage
+                foreach (var relation in relations)
                 {
-                    int start_idx = idx_1000 * 1000;
-                    int stop_idx = System.Math.Min((idx_1000 + 1) * 1000, ids.Count);
-
-                    sql = "SELECT * FROM relation_tags WHERE (relation_id IN ({0})) ";
-                    string ids_string = this.ConstructIdList(ids, start_idx, stop_idx);
-                    if (ids_string.Length > 0)
-                    {
-                        sql = string.Format(sql, ids_string);
-                        com = new SQLiteCommand(sql);
-                        com.Connection = con;
-                        reader = ExecuteReader(com);
-                        while (reader.Read())
-                        {
-                            long id = reader.GetInt64(0);
-                            string key = reader.GetString(1);
-                            object value_object = reader[2];
-                            string value = string.Empty;
-                            if (value_object != null && value_object != DBNull.Value)
-                            {
-                                value = (string)value_object;
-                            }
-
-                            Relation relation;
-                            if (relations.TryGetValue(id, out relation))
-                            {
-                                if (relation.Tags == null)
-                                {
-                                    relation.Tags = new TagsCollection();
-                                }
-                                relation.Tags.Add(key, value);
-                            }
-                        }
-                        reader.Close();
-                    }
+                    relation_ids.Add(relation.Id.Value);
                 }
 
-                return relations.Values.ToList<Relation>();
+                // recursively add all relations containing above relations as a member
+                var remaining_relations = relations;
+                do
+                {
+                    var new_relations = new List<Relation>();
+
+                    // get the relations for each remaining relation
+                    var relations_for = GetRelationsForBatch(remaining_relations.Cast<OsmGeo>().ToList());
+
+                    foreach (var relation_for in relations_for)
+                    {
+                        // if we don't already have this relation, we need to search it additionally for relations
+                        if (!relation_ids.Contains(relation_for.Id.Value))
+                        {
+                            // ensure we don't search for this again
+                            relation_ids.Add(relation_for.Id.Value);
+
+                            // add to the next searchable list
+                            new_relations.Add(relation_for);
+                        }
+                    }
+
+                    // add to the highest level list
+                    Utilities.AddRange(relations, new_relations);
+
+                    // the next set of relations to be searched is the set just found
+                    remaining_relations = new_relations;
+                } while (remaining_relations.Count > 0);
             }
-            return new List<Relation>();
+
+            return relations;
         }
 
         /// <summary>
-        /// Converts the member type id to the relationmembertype enum.
-        /// </summary>
-        /// <param name="member_type"></param>
-        /// <returns></returns>
-        private OsmGeoType? ConvertMemberType(long member_type)
-        {
-            switch(member_type)
-            {
-                case (long)OsmGeoType.Node:
-                    return OsmGeoType.Node;
-                case (long)OsmGeoType.Way:
-                    return OsmGeoType.Way;
-                case (long)OsmGeoType.Relation:
-                    return OsmGeoType.Relation;
-            }
-            throw new ArgumentOutOfRangeException("Invalid member type.");
-        }
-
-        /// <summary>
-        /// Converts the member type to long.
-        /// </summary>
-        /// <param name="memberType"></param>
-        /// <returns></returns>
-        private long? ConvertMemberType(OsmGeoType? memberType)
-        {
-            if (memberType.HasValue)
-            {
-                return (long)memberType.Value;
-            }
-            return null;
-        }
-
-        /// <summary>
-        /// Returns all relations that contain the given object.
+        /// Returns all relations for the given objects.
         /// </summary>
         /// <param name="type"></param>
         /// <param name="id"></param>
         /// <returns></returns>
         public override IList<Relation> GetRelationsFor(OsmGeoType type, long id)
         {
-            SQLiteConnection con = CreateConnection();
-            SQLiteCommand com;
-            SQLiteDataReader reader;
+            var sql = string.Format(SELECT_RELATIONS_FOR_MEMBER, id, SchemaTools.ConvertMemberTypeShort(type));
+            var relation_ids = new List<long>();
 
-            string sql = "SELECT relation_id FROM relation_members WHERE (member_id = :member_id and member_type = :member_type) ORDER BY sequence_id";
-            com = new SQLiteCommand(sql);
-            com.Connection = con;
-            com.Parameters.Add(new SQLiteParameter(@"member_type", DbType.Int64));
-            com.Parameters.Add(new SQLiteParameter(@"member_id", DbType.Int64));
-            com.Parameters[0].Value = this.ConvertMemberType(type).Value;
-            com.Parameters[1].Value = id;
-
-            HashSet<long> ids = new HashSet<long>();
-            reader = ExecuteReader(com);
-            while (reader.Read())
+            using (var command = new SQLiteCommand(sql, EnsureConnection()))
             {
-                ids.Add(reader.GetInt64(0));
-            }
-            reader.Close();
-
-            return this.GetRelations(ids.ToList<long>());
-        }
-
-        /// <summary>
-        /// Returns the ways for the given ids.
-        /// </summary>
-        /// <param name="ids"></param>
-        /// <returns></returns>
-        public override IList<Way> GetWays(IList<long> ids)
-		{
-			if (ids.Count > 0)
-			{
-				SQLiteConnection con = this.CreateConnection();
-
-				// STEP2: Load ways.
-				Dictionary<long, Way> ways = new Dictionary<long, Way>();
-				string sql;
-				SQLiteCommand com;
-				SQLiteDataReader reader;
-				for (int idx_1000 = 0; idx_1000 <= ids.Count / 1000; idx_1000++)
-				{
-					int start_idx = idx_1000 * 1000;
-					int stop_idx = System.Math.Min((idx_1000 + 1) * 1000, ids.Count);
-
-					sql = "SELECT id, changeset_id, visible, timestamp, version, usr, usr_id FROM way WHERE (id IN ({0})) ";
-					string ids_string = this.ConstructIdList(ids, start_idx, stop_idx);
-					if (ids_string.Length > 0)
-					{
-						sql = string.Format(sql, ids_string);
-						com = new SQLiteCommand(sql);
-						com.Connection = con;
-						reader = ExecuteReader(com);
-						Way way;
-						while (reader.Read())
-						{
-							long id = reader.GetInt64(0);
-							long? changeset_id = reader.IsDBNull(1) ? null : (long?)reader.GetInt64(1);
-							bool? visible = reader.IsDBNull(2) ? null : (bool?)reader.GetBoolean(2);
-                            DateTime? timestamp = reader.IsDBNull(3) ? null : (DateTime?)this.ConvertDateTime(reader.GetInt64(3));
-							ulong? version = reader.IsDBNull(4) ? null : (ulong?)reader.GetInt64(4);
-                            string user = reader.IsDBNull(5) ? null : reader.GetString(5);
-                            long? user_id = reader.IsDBNull(6) ? null : (long?)reader.GetInt64(6);
-
-							// create way.
-                            way = new Way();
-                            way.Id = id;
-                            way.Version = version;
-                            way.UserName = user;
-                            way.UserId = user_id;
-                            way.Visible = visible;
-							way.TimeStamp = timestamp;
-							way.ChangeSetId = changeset_id;
-
-							ways.Add(way.Id.Value, way);
-						}
-						reader.Close();
-					}
-				}
-
-				//STEP3: Load all node-way relations
-				List<long> missing_node_ids = new List<long>();
-				for (int idx_1000 = 0; idx_1000 <= ids.Count / 1000; idx_1000++)
-				{
-					int start_idx = idx_1000 * 1000;
-					int stop_idx = System.Math.Min((idx_1000 + 1) * 1000, ids.Count);
-
-					sql = "SELECT * FROM way_nodes WHERE (way_id IN ({0})) ORDER BY sequence_id";
-					string ids_string = this.ConstructIdList(ids, start_idx, stop_idx);
-					if (ids_string.Length > 0)
-					{
-						sql = string.Format(sql, ids_string);
-						com = new SQLiteCommand(sql);
-						com.Connection = con;
-						reader = ExecuteReader(com);
-						while (reader.Read())
-						{
-							long id = reader.GetInt64(0);
-							long node_id = reader.GetInt64(1);
-							long sequence_id = reader.GetInt64(2);
-
-                            Way way;
-                            if (ways.TryGetValue(id, out way))
-                            {
-                                if(way.Nodes == null)
-                                {
-                                    way.Nodes = new List<long>();
-                                }
-                                way.Nodes.Add(node_id);
-                            }
-						}
-						reader.Close();
-					}
-				}
-
-				//STEP4: Load all tags.
-				for (int idx_1000 = 0; idx_1000 <= ids.Count / 1000; idx_1000++)
-				{
-					int start_idx = idx_1000 * 1000;
-					int stop_idx = System.Math.Min((idx_1000 + 1) * 1000, ids.Count);
-
-					sql = "SELECT * FROM way_tags WHERE (way_id IN ({0})) ";
-					string ids_string = this.ConstructIdList(ids, start_idx, stop_idx);
-					if (ids_string.Length > 0)
-					{
-						sql = string.Format(sql, ids_string);
-						com = new SQLiteCommand(sql);
-						com.Connection = con;
-						reader = ExecuteReader(com);
-						while (reader.Read())
-						{
-							long id = reader.GetInt64(0);
-							string key = reader.GetString(1);
-							object value_object = reader[2];
-							string value = string.Empty;
-							if (value_object != null && value_object != DBNull.Value)
-							{
-								value = (string)value_object;
-							}
-
-							Way way;
-							if (ways.TryGetValue(id, out way))
-							{
-                                if (way.Tags == null)
-                                {
-                                    way.Tags = new TagsCollection();
-                                }
-								way.Tags.Add(key, value);
-							}
-						}
-						reader.Close();
-					}
-				}
-
-				return ways.Values.ToList<Way>();
-			}
-			return new List<Way>();
-		}
-
-        /// <summary>
-        /// Returns all the ways that contain the given node.
-        /// </summary>
-        /// <param name="id"></param>
-        /// <returns></returns>
-        public override IList<Way> GetWaysFor(long id)
-		{
-            List<long> ids = new List<long>();
-            ids.Add(id);
-            return this.GetWaysFor(ids);
-		}
-
-        /// <summary>
-        /// Returns all the ways that contain any of the given nodes.
-        /// </summary>
-        /// <param name="ids"></param>
-        /// <returns></returns>
-		public IList<Way> GetWaysFor(List<long> ids)
-		{
-            if (ids.Count > 0)
-			{
-				SQLiteConnection con = CreateConnection();
-                SQLiteCommand com;
-                SQLiteDataReader reader;
-
-                HashSet<long> wayIds = new HashSet<long>();
-                for (int idx_1000 = 0; idx_1000 <= ids.Count / 1000; idx_1000++)
+                using (var reader = command.ExecuteReader())
                 {
-                    int start_idx = idx_1000 * 1000;
-                    int stop_idx = System.Math.Min((idx_1000 + 1) * 1000, ids.Count);
-
-                    string sql = "SELECT * FROM way_nodes WHERE (node_id IN ({0})) ORDER BY sequence_id";
-                    string ids_string = this.ConstructIdList(ids, start_idx, stop_idx);
-                    if (ids_string.Length > 0)
+                    while (reader.Read())
                     {
-                        sql = string.Format(sql, ids_string);
-                        com = new SQLiteCommand(sql);
-                        com.Connection = con;
-                        reader = ExecuteReader(com);
-                        while (reader.Read())
-                        {
-                            long id = reader.GetInt64(0);
-                            wayIds.Add(id);
-                        }
-                        reader.Close();
+                        relation_ids.Add(ReadOneInt64(reader));
                     }
                 }
+            }
 
-                return this.GetWays(wayIds.ToList<long>());
-			}
+            return GetRelations(relation_ids);
+        }
 
-			return new List<Way>();
-		}
+        #endregion public relation queries
+
+        #region public combined queries
 
         /// <summary>
-        /// Converts a given unix time to a DateTime object.
+        /// Returns all data within the given bounding box and filtered by the given filter.
         /// </summary>
-        /// <param name="unixTime"></param>
-        /// <returns></returns>
-        private DateTime ConvertDateTime(long unixTime)
+        /// <param name="box">The bounding box to search within</param>
+        /// <param name="filter">Filtering options for the results</param>
+        /// <returns>Matching OsmGeos</returns>
+        public override IList<OsmGeo> Get(GeoCoordinateBox box, Filter filter)
         {
-            return unixTime.FromUnixTime();
+            var geos = new List<OsmGeo>();
+
+            var nodes = GetNodes(box);
+            geos.AddRange(nodes);
+
+            var ways = GetWays(nodes);
+            geos.AddRange(ways);
+
+            var relations = GetRelationsFor(geos);
+            geos.AddRange(relations);
+
+            return geos;
         }
 
         /// <summary>
-        /// Executes a reader.
+        /// Gets all geometries in the given list of tiles
         /// </summary>
-        /// <param name="com"></param>
-        /// <returns></returns>
-		private static SQLiteDataReader ExecuteReader(SQLiteCommand com)
-		{
-			return com.ExecuteReader();
-		}
+        /// <param name="tiles">List of tiles to fetch geometries from</param>
+        /// <param name="filter">Filtering options for the results</param>
+        /// <returns>Matching OsmGeos</returns>
+        // TODO: mark as override
+        public IList<OsmGeo> Get(IList<Tile> tiles, Filter filter)
+        {
+            var geos = new List<OsmGeo>();
 
-		#region Tile Calculations
+            var nodes = GetNodesForTiles(tiles);
+            geos.AddRange(nodes);
+            _geo_cache.AddNodes(nodes);
 
-		uint xy2tile(uint x, uint y)
-		{
-			uint tile = 0;
-			int i;
+            var ways = GetWays(nodes);
+            geos.AddRange(ways);
+            _geo_cache.AddWays(ways);
 
-			for (i = 15; i >= 0; i--)
-			{
-				tile = (tile << 1) | ((x >> i) & 1);
-				tile = (tile << 1) | ((y >> i) & 1);
-			}
+            var relations = GetRelationsFor(geos);
+            geos.AddRange(relations);
+            _geo_cache.AddRelations(relations);
 
-			return tile;
-		}
-
-		uint lon2x(double lon)
-		{
-			return (uint)System.Math.Floor(((lon + 180.0) * 65536.0 / 360.0));
-		}
-
-		uint lat2y(double lat)
-		{
-			return (uint)System.Math.Floor(((lat + 90.0) * 65536.0 / 180.0));
-		}
-
-		#endregion
+            return geos;
+        }
 
         /// <summary>
-        /// Returns all objects with the given bounding box and valid for the given filter;
+        /// Gets all geometries in the tile
+        /// </summary>
+        /// <param name="tile">The tile to fetch geometries from</param>
+        /// <param name="filter">Filtering options for the results</param>
+        /// <returns>Matching OsmGeos</returns>
+        public IList<OsmGeo> Get(Tile tile, Filter filter)
+        {
+            var tiles = new List<Tile>();
+
+            tiles.Add(tile);
+
+            return Get(tiles, filter);
+        }
+
+        /// <summary>
+        /// Returns all data within the given tile
+        /// </summary>
+        /// <param name="tile">The tile to fetch geometries from</param>
+        /// <param name="filter">Filtering options for the results</param>
+        /// <returns>An OsmGeoCollection object containing the data within the given tile</returns>
+        public OsmGeoCollection GetCollection(Tile tile, Filter filter)
+        {
+            var tiles = new List<Tile>();
+
+            tiles.Add(tile);
+
+            return GetCollection(tiles, filter);
+        }
+
+        /// <summary>
+        /// Returns all data within the given tiles
+        /// </summary>
+        /// <param name="tiles">The tiles to fetch geometries from</param>
+        /// <param name="filter">Filtering options for the results</param>
+        /// <returns>An OsmGeoCollection object containing the data within the given tile</returns>
+        public OsmGeoCollection GetCollection(IList<Tile> tiles, Filter filter)
+        {
+            var geos = Get(tiles, filter);
+            var collection = new OsmGeoCollection();
+
+            foreach (var geo in geos)
+            {
+                if (geo.Type == OsmGeoType.Node)
+                {
+                    var node = geo as Node;
+                    collection.Nodes.Add(node.Id.Value, node);
+                }
+                else if (geo.Type == OsmGeoType.Way)
+                {
+                    var way = geo as Way;
+                    collection.Ways.Add(way.Id.Value, way);
+                }
+                else if (geo.Type == OsmGeoType.Relation)
+                {
+                    var relation = geo as Relation;
+
+                    if (!collection.Relations.ContainsKey(relation.Id.Value))
+                    {
+                        collection.Relations.Add(relation.Id.Value, relation);
+                    }
+                }
+            }
+
+            return collection;
+        }
+
+        /// <summary>
+        /// Returns all the objects in this dataset that evaluate the filter to true.
         /// </summary>
         /// <param name="box"></param>
         /// <param name="filter"></param>
         /// <returns></returns>
-        public override IList<OsmGeo> Get(GeoCoordinateBox box, OsmSharp.Osm.Filters.Filter filter)
-		{
-			// initialize connection.
-			SQLiteConnection con = this.CreateConnection();
-            List<OsmGeo> res = new List<OsmGeo>();
+        public OsmGeoCollection GetCollection(GeoCoordinateBox box, Filter filter)
+        {
+            var geos = Get(box, filter);
+            var collection = new OsmGeoCollection();
 
-			// calculate bounding box parameters to query db.
-			long latitude_min = (long)(box.MinLat * 10000000.0);
-			long longitude_min = (long)(box.MinLon * 10000000.0);
-			long latitude_max = (long)(box.MaxLat * 10000000.0);
-			long longitude_max = (long)(box.MaxLon * 10000000.0);
-
-			// TODO: improve this to allow loading of bigger bb's.
-			uint x_min = lon2x(box.MinLon);
-			uint x_max = lon2x(box.MaxLon);
-			uint y_min = lat2y(box.MinLat);
-			uint y_max = lat2y(box.MaxLat);
-
-			IList<long> boxes = new List<long>();
-
-			for (uint x = x_min; x <= x_max; x++)
-			{
-				for (uint y = y_min; y <= y_max; y++)
-				{
-					boxes.Add(this.xy2tile(x, y));
-				}
-			}
-
-			// STEP 1: query nodes table.
-			//id	latitude	longitude	changeset_id	visible	timestamp	tile	version
-            //string sql
-            //        = "SELECT node.id, node.latitude, node.longitude, node.changeset_id, node.timestamp, node.version, " +
-            //          "node.usr, node.usr_id, node.visible FROM node WHERE  (tile IN ({4})) AND (visible = 1) AND (latitude BETWEEN {0} AND {1} AND longitude BETWEEN {2} AND {3})";
-            // remove this nasty BETWEEN operation because it depends on the database (!) what results are returned (including or excluding bounds!!!)
-            string sql
-                = "SELECT node.id, node.latitude, node.longitude, node.changeset_id, node.timestamp, node.version, " +
-                  "node.usr, node.usr_id, node.visible FROM node WHERE  (tile IN ({4})) AND (visible = 1) AND (latitude >= {0} AND latitude < {1} AND longitude >= {2} AND longitude < {3})";
-			    sql = string.Format(sql,
-							latitude_min.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                            latitude_max.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                            longitude_min.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                            longitude_max.ToString(System.Globalization.CultureInfo.InvariantCulture),
-							this.ConstructIdList(boxes));
-
-			// TODO: parameters.
-			var com = new SQLiteCommand(sql);
-			com.Connection = con;
-			SQLiteDataReader reader = ExecuteReader(com);
-			Node node = null;
-			var nodes = new Dictionary<long, Node>();
-            var nodeIds = new List<long>();
-			while (reader.Read())
-			{
-                node = new Node();
-                node.Id = reader.GetInt64(0);
-                int latitude_int = reader.GetInt32(1);
-                int longitude_int = reader.GetInt32(2);
-                node.ChangeSetId = reader.IsDBNull(3) ? null : (long?)reader.GetInt64(3);
-                node.TimeStamp = reader.IsDBNull(4) ? null : (DateTime?)this.ConvertDateTime(reader.GetInt64(4));
-                node.Version = reader.IsDBNull(5) ? null : (ulong?)reader.GetInt64(5);
-                node.Latitude = latitude_int / 10000000.0;
-                node.Longitude = longitude_int / 10000000.0;
-                node.UserName = reader.IsDBNull(6) ? null : reader.GetString(6);
-                node.UserId = reader.IsDBNull(7) ? null : (long?)reader.GetInt64(7);
-                node.Visible = reader.IsDBNull(8) ? null : (bool?)reader.GetBoolean(8);
-
-                nodeIds.Add(node.Id.Value);
-				nodes.Add(node.Id.Value, node);
-			}
-			reader.Close();
-
-			// STEP2: Load all node tags.
-			this.LoadNodeTags(nodes);
-            res.AddRange(nodes.Values);
-
-            // load all ways that contain the nodes that have been found.
-            res.AddRange(this.GetWaysFor(nodeIds));
-
-            // get relations containing any of the nodes or ways in the current results-list.
-            List<Relation> relations = new List<Relation>();
-            HashSet<long> relationIds = new HashSet<long>();
-            foreach (OsmGeo osmGeo in res)
+            foreach (var geo in geos)
             {
-                IList<Relation> relationsFor = this.GetRelationsFor(osmGeo);
-                foreach (Relation relation in relationsFor)
+                if (geo.Type == OsmGeoType.Node)
                 {
-                    if (!relationIds.Contains(relation.Id.Value))
+                    var node = geo as Node;
+                    collection.Nodes.Add(node.Id.Value, node);
+                }
+                else if (geo.Type == OsmGeoType.Way)
+                {
+                    var way = geo as Way;
+                    collection.Ways.Add(way.Id.Value, way);
+                }
+                else if (geo.Type == OsmGeoType.Relation)
+                {
+                    var relation = geo as Relation;
+
+                    if (!collection.Relations.ContainsKey(relation.Id.Value))
                     {
-                        relations.Add(relation);
-                        relationIds.Add(relation.Id.Value);
+                        collection.Relations.Add(relation.Id.Value, relation);
                     }
                 }
             }
 
-            // recursively add all relations containing other relations as a member.
-            do
+            return collection;
+        }
+
+        /// <summary>
+        /// Returns the unique tags for the given geo type
+        /// </summary>
+        /// <param name="type">The geo type</param>
+        /// <param name="keys">The key filter, only return tag combinations with these keys</param>
+        public HashSet<TagsCollectionBase> UniqueTags(OsmGeoType type, List<string> keys = null)
+        {
+            if (keys != null)
             {
-                res.AddRange(relations); // add previous relations-list.
-                List<Relation> newRelations = new List<Relation>();
-                foreach (OsmGeo osmGeo in relations)
+                if (keys.Count <= 0)
                 {
-                    IList<Relation> relationsFor = this.GetRelationsFor(osmGeo);
-                    foreach (Relation relation in relationsFor)
+                    keys = null;
+                }
+            }
+
+            string sql;
+
+            if (keys == null)
+            {
+                sql = string.Format(SELECT_UNIQUE_TAGS_FOR_TYPE, type.ToString().ToLower());
+            }
+            else
+            {
+                sql = string.Format(SELECT_UNIQUE_TAGS_FOR_TYPE_GIVEN_KEYS,
+                    type.ToString().ToLower(), keys.CommaSeperatedString());
+            }
+
+            Dictionary<int, TagsCollectionBase> uniques;
+
+            using (var command = new SQLiteCommand(sql, _connection))
+            {
+                using (var reader = command.ExecuteReader())
+                {
+                    uniques = new Dictionary<int, TagsCollectionBase>();
+
+                    while (reader.Read())
                     {
-                        if (!relationIds.Contains(relation.Id.Value))
+                        var tag = ReadInt32AndTag(reader);
+
+                        if (!uniques.ContainsKey(tag.Item1))
                         {
-                            newRelations.Add(relation);
-                            relationIds.Add(relation.Id.Value);
+                            uniques.Add(tag.Item1, new TagsCollection());
+                        }
+
+                        uniques[tag.Item1].Add(tag.Item2);
+                    }
+                }
+            }
+
+            var result = new HashSet<TagsCollectionBase>();
+
+            foreach (var collection in uniques)
+            {
+                result.Add(collection.Value);
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Returns the unique tags for the given geo type
+        /// </summary>
+        /// <param name="type">The geo type</param>
+        /// <param name="key">The key filter, only return tag combinations with this key</param>
+        public HashSet<TagsCollectionBase> UniqueTags(OsmGeoType type, string key)
+        {
+            return UniqueTags(type, new List<string>() { key });
+        }
+
+        /// <summary>
+        /// Returns all ways matching the tag passed
+        /// </summary>
+        public OsmGeoCollection GetGeosGivenTag(OsmGeoType type, string tag, List<string> values)
+        {
+            var sql_command = string.Format(SELECT_GEO_IDS_GIVEN_TAGS, type.ToString().ToLower(),
+                tag, values.CommaSeperatedString());
+            var way_ids = GetWayIdsGivenSQL(sql_command);
+            var ways = GetWays(way_ids);
+
+            var result = new OsmGeoCollection();
+
+            foreach (var way in ways)
+            {
+                result.Ways.Add(way.Id.Value, way);
+            }
+
+            var nodes = GetNodesForWayIds(way_ids);
+
+            foreach (var node in nodes)
+            {
+                result.Nodes.Add(node.Id.Value, node);
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Returns all ways matching the tags passed
+        /// </summary>
+        public OsmGeoCollection GetGeosGivenTags(OsmGeoType type, Dictionary<string, List<string>> tags)
+        {
+            var sb = new StringBuilder();
+            int index = 0;
+
+            foreach (var tag in tags)
+            {
+                if (index > 0)
+                {
+                    sb.Append(UNION);
+                }
+
+                sb.Append(string.Format(SELECT_GEO_IDS_GIVEN_TAGS, type.ToString().ToLower(),
+                    tag.Key, tag.Value.CommaSeperatedString()));
+                index++;
+            }
+
+            var way_ids = GetWayIdsGivenSQL(sb.ToString());
+            var ways = GetWays(way_ids);
+
+            var result = new OsmGeoCollection();
+
+            foreach (var way in ways)
+            {
+                result.Ways.Add(way.Id.Value, way);
+            }
+
+            var nodes = GetNodesForWayIds(way_ids);
+
+            foreach (var node in nodes)
+            {
+                result.Nodes.Add(node.Id.Value, node);
+            }
+
+            return result;
+        }
+
+        #endregion public combined queries
+
+        /// <summary>
+        /// Closes this sqlite data source
+        /// </summary>
+        public void Close()
+        {
+            if (_connection_owner)
+            {
+                if (_connection != null && !Utilities.IsNullOrWhiteSpace(_connection_string))
+                {
+                    // connection exists and was created here; close it here!
+                    _connection.Close();
+                    _connection.Dispose();
+                    _connection = null;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Diposes the resources used in this sqlite data source
+        /// </summary>
+        public void Dispose()
+        {
+            Close();
+        }
+
+        private SQLiteConnection EnsureConnection()
+        {
+            if (_connection == null)
+            {
+                _connection = new SQLiteConnection(_connection_string);
+                _connection_owner = true;
+            }
+
+            if (_connection.State != System.Data.ConnectionState.Open)
+            {
+                _connection.Open();
+            }
+
+            if (_create_and_detect_schema)
+            {   // attempts to create and detect tables
+                SQLiteSchemaTools.CreateAndDetect(_connection);
+            }
+
+            return _connection;
+        }
+
+        #region private id queries
+
+        private IList<long> GetIds(IList<long> ids, string sql_command, params object[] args)
+        {
+            var return_list = new List<long>();
+
+            if (ids.Count > 0)
+            {
+                for (var index = 0; index <= ids.Count / 1000; index++)
+                {
+                    var start = index * 1000;
+                    var end = System.Math.Min((index + 1) * 1000, ids.Count);
+                    var id_list = SchemaTools.ConstructIdList(ids, start, end);
+
+                    if (id_list.Length > 0)
+                    {
+                        string sql;
+
+                        if (args == null)
+                        {
+                            sql = string.Format(sql_command, id_list);
+                        }
+                        else if (args.Length == 0)
+                        {
+                            sql = string.Format(sql_command, id_list);
+                        }
+                        else
+                        {
+                            var new_args = new List<object>();
+                            new_args.Add(id_list);
+                            new_args.AddRange(args);
+
+                            sql = string.Format(sql_command, new_args.ToArray());
+                        }
+
+                        using (var command = new SQLiteCommand(sql, EnsureConnection()))
+                        {
+                            using (var reader = command.ExecuteReader())
+                            {
+                                while (reader.Read())
+                                {
+                                    var id = ReadOneInt64(reader);
+                                    return_list.Add(id);
+                                }
+
+                                reader.Close();
+                            }
                         }
                     }
                 }
-                relations = newRelations;
-            } while (relations.Count > 0);
+            }
 
-            if (filter != null)
+            return return_list;
+        }
+
+        private long ReadOneInt64(SQLiteDataReader reader)
+        {
+            return reader.GetInt64(0);
+        }
+
+        private Tuple<long, long> ReadTwoInt64s(SQLiteDataReader reader)
+        {
+            return new Tuple<long, long>(reader.GetInt64(0), reader.GetInt64(1));
+        }
+
+        private Tuple<long, int> ReadOneInt64OneInt32(SQLiteDataReader reader)
+        {
+            return new Tuple<long, int>(reader.GetInt64(0), reader.GetInt32(1));
+        }
+
+        #endregion private id queries
+
+        #region private tag queries
+
+        private void GetTags(SQLiteConnection connection, Dictionary<long, Node> id_nodes)
+        {
+            var geo_list = new Dictionary<long, OsmGeo>();
+
+            foreach (var node in id_nodes)
             {
-                var filtered = new List<OsmGeo>();
-                foreach (OsmGeo geo in res)
+                geo_list.Add(node.Key, node.Value);
+            }
+
+            GetTags(connection, geo_list, OsmGeoType.Node);
+        }
+
+        private void GetTags(SQLiteConnection connection, Dictionary<long, Way> id_ways)
+        {
+            var geo_list = new Dictionary<long, OsmGeo>();
+
+            foreach (var way in id_ways)
+            {
+                geo_list.Add(way.Key, way.Value);
+            }
+
+            GetTags(connection, geo_list, OsmGeoType.Way);
+        }
+
+        private void GetTags(SQLiteConnection connection, Dictionary<long, Relation> id_relations)
+        {
+            var geo_list = new Dictionary<long, OsmGeo>();
+
+            foreach (var relation in id_relations)
+            {
+                geo_list.Add(relation.Key, relation.Value);
+            }
+
+            GetTags(connection, geo_list, OsmGeoType.Relation);
+        }
+
+        private void GetTags(SQLiteConnection connection, Dictionary<long, OsmGeo> id_geos,
+            OsmGeoType type)
+        {
+            var geo_ids = id_geos.Keys.ToList();
+
+            if (geo_ids.Count > 0)
+            {
+                // get geo ids and corresponding tag ids
+                var id_pairs = new Dictionary<long, int>();
+                var tag_ids = new HashSet<int>();
+
+                for (var index = 0; index <= geo_ids.Count / 1000; ++index)
                 {
-                    if (filter.Evaluate(geo))
+                    var start = index * 1000;
+                    var end = System.Math.Min((index + 1) * 1000, geo_ids.Count);
+                    var ids = SchemaTools.ConstructIdList(geo_ids, start, end);
+
+                    if (ids.Length > 0)
                     {
-                        filtered.Add(geo);
+                        var sql = string.Format(SELECT_GEO_TAG_IDS, type.ToString().ToLower(), ids);
+
+                        using (var command = new SQLiteCommand(sql, connection))
+                        {
+                            using (var reader = command.ExecuteReader())
+                            {
+                                while (reader.Read())
+                                {
+                                    var id_pair = ReadOneInt64OneInt32(reader);
+
+                                    id_pairs.Add(id_pair.Item1, id_pair.Item2);
+                                    tag_ids.Add(id_pair.Item2);
+                                }
+
+                                reader.Close();
+                            }
+                        }
                     }
                 }
-                return filtered;
+
+                // if we actually fetched id pairs
+                if (tag_ids.Count > 0)
+                {
+                    var tags_collections = new Dictionary<int, TagsCollectionBase>();
+
+                    for (var index = 0; index <= tag_ids.Count / 1000; ++index)
+                    {
+                        var start = index * 1000;
+                        var end = System.Math.Min((index + 1) * 1000, tag_ids.Count);
+                        var ids = SchemaTools.ConstructIdList(tag_ids.ToList(), start, end);
+
+                        if (ids.Length > 0)
+                        {
+                            var sql = string.Format(SELECT_TAGS_ID, type.ToString().ToLower(), ids);
+
+                            using (var command = new SQLiteCommand(sql, connection))
+                            {
+                                using (var reader = command.ExecuteReader())
+                                {
+                                    while (reader.Read())
+                                    {
+                                        var tag = ReadInt32AndTag(reader);
+
+                                        if (!tags_collections.ContainsKey(tag.Item1))
+                                        {
+                                            tags_collections[tag.Item1] = new TagsCollection();
+                                        }
+
+                                        tags_collections[tag.Item1].Add(tag.Item2);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // match up fetched tag collection
+                    foreach (var id_pair in id_pairs)
+                    {
+                        if (id_geos[id_pair.Key].Tags == null)
+                        {
+                            id_geos[id_pair.Key].Tags = tags_collections[id_pair.Value];
+                        }
+                        else
+                        {
+                            id_geos[id_pair.Key].Tags = id_geos[id_pair.Key].Tags.Union(tags_collections[id_pair.Value]);
+                        }
+                    }
+                }
+            }
+        }
+
+        private void GetTags(SQLiteConnection connection, OsmGeo geo)
+        {
+            var sql = string.Format(SELECT_TAGS, geo.Type.ToString().ToLower(), geo.Id);
+
+            using (var command = new SQLiteCommand(sql, connection))
+            {
+                using (var reader = command.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        var tag = ReadTag(reader);
+
+                        if (geo.Tags == null)
+                        {
+                            geo.Tags = new TagsCollection();
+                        }
+
+                        if (!geo.Tags.ContainsKey(tag.Key))
+                        {
+                            geo.Tags.Add(tag);
+                        }
+                    }
+                }
+            }
+        }
+
+        private Tag ReadTag(SQLiteDataReader reader)
+        {
+            return new Tag(reader.GetString(0), reader.GetString(1));
+        }
+
+        private Tuple<long, Tag> ReadInt64AndTag(SQLiteDataReader reader)
+        {
+            return new Tuple<long, Tag>(reader.GetInt64(0), new Tag(reader.GetString(1), reader.GetString(2)));
+        }
+
+        private Tuple<int, Tag> ReadInt32AndTag(SQLiteDataReader reader)
+        {
+            return new Tuple<int, Tag>(reader.GetInt32(0), new Tag(reader.GetString(1), reader.GetString(2)));
+        }
+
+        #endregion private tag queries
+
+        #region private node queries
+
+        private IList<Node> GetNodesGivenSQL(IList<long> ids, string sql_command, params object[] args)
+        {
+            var return_list = new List<Node>();
+
+            if (ids.Count > 0)
+            {
+                var nodes = new Dictionary<long, Node>();
+                for (var index = 0; index <= ids.Count / 1000; index++)
+                {
+                    var start = index * 1000;
+                    var end = System.Math.Min((index + 1) * 1000, ids.Count);
+                    var ids_list = SchemaTools.ConstructIdList(ids, start, end);
+
+                    if (ids_list.Length > 0)
+                    {
+                        string sql;
+
+                        if (args == null)
+                        {
+                            sql = string.Format(sql_command, ids_list);
+                        }
+                        else if (args.Length == 0)
+                        {
+                            sql = string.Format(sql_command, ids_list);
+                        }
+                        else
+                        {
+                            var new_args = new List<object>();
+                            new_args.Add(ids_list);
+                            new_args.AddRange(args);
+
+                            sql = string.Format(sql_command, new_args.ToArray());
+                        }
+
+                        using (var command = new SQLiteCommand(sql, EnsureConnection()))
+                        {
+                            using (var reader = command.ExecuteReader())
+                            {
+                                while (reader.Read())
+                                {
+                                    var node = ReadNode(reader);
+
+                                    if (!nodes.ContainsKey(node.Id.Value))
+                                    {
+                                        nodes.Add(node.Id.Value, node);
+                                    }
+                                }
+
+                                reader.Close();
+                            }
+                        }
+                    }
+                }
+
+                GetTags(EnsureConnection(), nodes);
+
+                return_list = nodes.Values.ToList();
+            }
+            return return_list;
+        }
+
+        private Node ReadNode(SQLiteDataReader reader)
+        {
+            var node = new Node();
+
+            node.Id = reader.GetInt64(0);
+            node.Latitude = SQLiteSchemaTools.DBToGeo(reader.GetInt32(1));
+            node.Longitude = SQLiteSchemaTools.DBToGeo(reader.GetInt32(2));
+
+            // evaluate name
+            if (!reader.IsDBNull(3))
+            {
+                var name = reader.GetString(3);
+                EvaluateName(name, node);
             }
 
-            return res;
-		}
+            return node;
+        }
 
-        /// <summary>
-        /// Constructs a list of ids.
-        /// </summary>
-        /// <param name="ids"></param>
-        /// <returns></returns>
-		private string ConstructIdList(IList<long> ids)
-		{
-			return this.ConstructIdList(ids, 0, ids.Count);
-		}
+        #endregion private node queries
 
-        /// <summary>
-        /// Constructs a list of ids.
-        /// </summary>
-        /// <param name="ids"></param>
-        /// <param name="startIdx"></param>
-        /// <param name="endIdx"></param>
-        /// <returns></returns>
-		private string ConstructIdList(IList<long> ids, int startIdx, int endIdx)
-		{
-			string return_string = string.Empty;
-			if (ids.Count > 0 && ids.Count > startIdx)
-			{
-				return_string = return_string + ids[startIdx].ToString();
-				for (int i = startIdx + 1; i < endIdx; i++)
-				{
-					return_string = return_string + "," + ids[i].ToString();
-				}
-			}
-			return return_string;
-		}
+        #region private way queries
 
-        /// <summary>
-        /// Loads all tags for all given nodes.
-        /// </summary>
-        /// <param name="nodes"></param>
-		private void LoadNodeTags(Dictionary<long, Node> nodes)
-		{
-			if (nodes.Count > 0)
-			{
-				for (int idx1000 = 0; idx1000 <= nodes.Count / 1000; idx1000++)
-				{
-					string sql = "SELECT * FROM node_tags WHERE (node_id IN ({0})) ";
-					int startIdx = idx1000 * 1000;
-					int stopIdx = System.Math.Min((idx1000 + 1) * 1000, nodes.Count);
-					string ids = this.ConstructIdList(nodes.Keys.ToList<long>(), startIdx, stopIdx);
-					if (ids.Length > 0)
-					{
-						sql = string.Format(sql, ids);
-						SQLiteConnection con = this.CreateConnection();
-						var com = new SQLiteCommand(sql);
-						com.Connection = con;
-						SQLiteDataReader reader = ExecuteReader(com);
-						while (reader.Read())
-						{
-							long returnedId = reader.GetInt64(0);
-							string key = reader.GetString(1);
-							object val = reader.GetValue(2);
-							string value = string.Empty;
-							if (val is string)
-							{
-								value = val as string;
-							}
+        private IList<long> GetWayIdsGivenSQL(string sql_command)
+        {
+            var way_ids = new List<long>();
 
-                            Node node;
-                            if (nodes.TryGetValue(returnedId, out node))
+            if (!string.IsNullOrEmpty(sql_command))
+            {
+                using (var command = new SQLiteCommand(sql_command, EnsureConnection()))
+                {
+                    using (var reader = command.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            var way_id = ReadOneInt64(reader);
+
+                            way_ids.Add(way_id);
+                        }
+
+                        reader.Close();
+                    }
+                }
+            }
+
+            return way_ids;
+        }
+
+        private Way ReadWay(SQLiteDataReader reader)
+        {
+            var way = new Way();
+
+            way.Id = reader.GetInt64(0);
+
+            // evaluate name
+            if (!reader.IsDBNull(1))
+            {
+                var name = reader.GetString(1);
+                EvaluateName(name, way);
+            }
+
+            return way;
+        }
+
+        private void GetWayNodes(SQLiteConnection connection, Way way)
+        {
+            var sql = string.Format(SELECT_WAY_NODE_IDS, way.Id);
+
+            using (var command = new SQLiteCommand(sql, connection))
+            {
+                using (var reader = command.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        long node_id = ReadOneInt64(reader);
+
+                        if (way.Nodes == null)
+                        {
+                            way.Nodes = new List<long>();
+                        }
+
+                        way.Nodes.Add(node_id);
+                    }
+
+                    reader.Close();
+                }
+            }
+        }
+
+        private void GetWaysNodes(SQLiteConnection connection, string way_ids, Dictionary<long, Way> id_ways)
+        {
+            if (way_ids.Length > 0)
+            {
+                var sql = string.Format(SELECT_WAYS_IDS_NODES, way_ids);
+
+                using (var command = new SQLiteCommand(sql, EnsureConnection()))
+                {
+                    using (var reader = command.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            var way_id_node_id = ReadTwoInt64s(reader);
+
+                            if (id_ways[way_id_node_id.Item1].Nodes == null)
                             {
-                                if (node.Tags == null)
-                                {
-                                    node.Tags = new TagsCollection();
-                                }
-                                node.Tags.Add(key, value);
+                                id_ways[way_id_node_id.Item1].Nodes = new List<long>();
                             }
 
-						}
-						reader.Close();
-					}
-				}
-			}
-		}
+                            id_ways[way_id_node_id.Item1].Nodes.Add(way_id_node_id.Item2);
+                        }
 
-		#endregion
+                        reader.Close();
+                    }
+                }
+            }
+        }
 
-        /// <summary>
-        /// Closes this source.
-        /// </summary>
-		public void Close()
-		{
-			if (_connection != null)
-			{
-				_connection.Close();
-				_connection = null;
-			}
-		}
+        #endregion private way queries
 
-		#region IDisposable Members
+        #region private relation queries
 
-        /// <summary>
-        /// Disposes all resources.
-        /// </summary>
-		public void Dispose()
-		{
-			_connection.Close();
-			_connection.Dispose();
-			_connection = null;
-		}
-
-		#endregion
-
-        /// <summary>
-        /// Represents a cached node.
-        /// </summary>
-        class CachedNode
+        private List<Relation> GetRelationsForBatch(IList<OsmGeo> geos)
         {
-            /// <summary>
-            /// Creates a new cached node.
-            /// </summary>
-            /// <param name="node"></param>
-            public CachedNode(Node node)
+            var final_relations = new List<Relation>();
+
+            if (geos.Count > 0)
             {
-                Node = node;
+                var nodes = new Dictionary<long, Node>();
+                var ways = new Dictionary<long, Way>();
+                var relations = new Dictionary<long, Relation>();
+
+                foreach (var geo in geos)
+                {
+                    if (geo.Type == OsmGeoType.Node)
+                    {
+                        if (!nodes.ContainsKey(geo.Id.Value))
+                        {
+                            nodes.Add(geo.Id.Value, geo as Node);
+                        }
+                    }
+                    else if (geo.Type == OsmGeoType.Way)
+                    {
+                        if (!ways.ContainsKey(geo.Id.Value))
+                        {
+                            ways.Add(geo.Id.Value, geo as Way);
+                        }
+                    }
+                    else if (geo.Type == OsmGeoType.Relation)
+                    {
+                        if (!relations.ContainsKey(geo.Id.Value))
+                        {
+                            relations.Add(geo.Id.Value, geo as Relation);
+                        }
+                    }
+                }
+
+                var node_ids = SchemaTools.ConstructIdList(nodes.Keys);
+                var way_ids = SchemaTools.ConstructIdList(ways.Keys);
+                var relation_ids = SchemaTools.ConstructIdList(relations.Keys);
+
+                final_relations.AddRange(GetRelationsFor(node_ids, OsmGeoType.Node));
+                final_relations.AddRange(GetRelationsFor(way_ids, OsmGeoType.Way));
+                final_relations.AddRange(GetRelationsFor(relation_ids, OsmGeoType.Relation));
             }
 
-            /// <summary>
-            /// Gets/sets the node.
-            /// </summary>
-            public Node Node { get; set; }
-
-            /// <summary>
-            /// Gets/sets the ways.
-            /// </summary>
-            public List<Way> Ways { get; set; }
+            return final_relations;
         }
-	}
+
+        private IList<Relation> GetRelationsFor(string ids_string, OsmGeoType member_type)
+        {
+            if (ids_string.Length > 0)
+            {
+                var sql = string.Format(SELECT_RELATIONS_FOR_MEMBER, ids_string,
+                    SchemaTools.ConvertMemberTypeShort(member_type));
+                var relation_ids = new List<long>();
+
+                using (var command = new SQLiteCommand(sql, EnsureConnection()))
+                {
+                    using (var reader = command.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            relation_ids.Add(ReadOneInt64(reader));
+                        }
+                    }
+                }
+
+                return GetRelations(relation_ids);
+            }
+
+            return new List<Relation>();
+        }
+
+        private Relation ReadRelation(SQLiteDataReader reader)
+        {
+            var relation = new Relation();
+
+            relation.Id = reader.GetInt64(0);
+
+            // evaluate name
+            if (!reader.IsDBNull(1))
+            {
+                var name = reader.GetString(1);
+                EvaluateName(name, relation);
+            }
+
+            return relation;
+        }
+
+        private void GetRelationMembers(SQLiteConnection connection, Relation relation)
+        {
+            var sql = string.Format(SELECT_RELATION_MEMBERS, relation.Id);
+
+            using (var command = new SQLiteCommand(sql, connection))
+            {
+                using (var reader = command.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        var relation_member = ReadRelationMember(reader);
+
+                        if (relation.Members == null)
+                        {
+                            relation.Members = new List<RelationMember>();
+                        }
+
+                        relation.Members.Add(relation_member);
+                    }
+                }
+            }
+        }
+
+        private void GetRelationsMembers(SQLiteConnection connection, string relation_ids, Dictionary<long, Relation> id_relations)
+        {
+            if (relation_ids.Length > 0)
+            {
+                var sql = string.Format(SELECT_RELATIONS_IDS_MEMBERS, relation_ids);
+
+                using (var command = new SQLiteCommand(sql, EnsureConnection()))
+                {
+                    using (var reader = command.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            var relation_id_member = ReadRelationIdAndMember(reader);
+
+                            if (id_relations[relation_id_member.Item1].Members == null)
+                            {
+                                id_relations[relation_id_member.Item1].Members = new List<RelationMember>();
+                            }
+
+                            id_relations[relation_id_member.Item1].Members.Add(relation_id_member.Item2);
+                        }
+
+                        reader.Close();
+                    }
+                }
+            }
+        }
+
+        private RelationMember ReadRelationMember(SQLiteDataReader reader)
+        {
+            var relation_member = new RelationMember();
+
+            relation_member.MemberType = SchemaTools.ConvertMemberType(reader.GetInt16(0));
+            relation_member.MemberId = reader.GetInt64(1);
+            relation_member.MemberRole = reader.GetString(2);
+
+            return relation_member;
+        }
+
+        private Tuple<long, RelationMember> ReadRelationIdAndMember(SQLiteDataReader reader)
+        {
+            var relation_member = new RelationMember();
+
+            relation_member.MemberType = SchemaTools.ConvertMemberType(reader.GetInt16(1));
+            relation_member.MemberId = reader.GetInt64(2);
+            relation_member.MemberRole = reader.GetString(3);
+
+            return new Tuple<long, RelationMember>(reader.GetInt64(0), relation_member);
+        }
+
+        #endregion private relation queries
+
+        private static void EvaluateName(string name, OsmGeo geo)
+        {
+            if (!string.IsNullOrEmpty(name))
+            {
+                if (geo.Tags == null)
+                {
+                    geo.Tags = new TagsCollection();
+                }
+
+                if (!geo.Tags.ContainsKey("name"))
+                {
+                    geo.Tags.Add("name", name);
+                }
+            }
+        }
+    }
 }
