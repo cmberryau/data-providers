@@ -125,6 +125,7 @@
     <Compile Include="..\SharedAssemblyVersion.cs">
       <Link>Properties\SharedAssemblyVersion.cs</Link>
     </Compile>
+    <Compile Include="Extensions.cs" />
     <Compile Include="Osm\SQLiteSchemaTools.cs" />
     <Compile Include="Osm\Streams\SQLiteOsmStreamSource.cs" />
     <Compile Include="Osm\Streams\SQLiteOsmStreamTarget.cs" />

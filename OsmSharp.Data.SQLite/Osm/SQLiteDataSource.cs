@@ -95,8 +95,7 @@ namespace OsmSharp.Data.SQLite.Osm
         /// <summary>
         /// The default zoom level that this data source reads at
         /// </summary>
-        // TODO: remark as override
-        public int DefaultZoomLevel
+        public override int DefaultZoomLevel
         {
             get
             {
@@ -108,7 +107,7 @@ namespace OsmSharp.Data.SQLite.Osm
         /// <summary>
         /// Returns true if this datasource supports concurrent copies.
         /// </summary>
-        public bool SupportsConcurrentCopies
+        public override bool SupportsConcurrentCopies
         {
             get
             {
@@ -370,8 +369,7 @@ namespace OsmSharp.Data.SQLite.Osm
         /// <summary>
         /// Provides a copy of the object that is safe to be read at the same time
         /// </summary>
-        // TODO: remark as override
-        public IDataSourceReadOnly ConcurrentCopy()
+        public override IDataSourceReadOnly ConcurrentCopy()
         {
             return new SQLiteDataSource(_connection_string, _geo_cache, _tags_cache);
         }
@@ -739,7 +737,6 @@ namespace OsmSharp.Data.SQLite.Osm
         /// <param name="tiles">List of tiles to fetch geometries from</param>
         /// <param name="filter">Filtering options for the results</param>
         /// <returns>Matching OsmGeos</returns>
-        // TODO: mark as override
         public IList<OsmGeo> Get(IList<Tile> tiles, Filter filter)
         {
             var geos = new List<OsmGeo>();
@@ -780,7 +777,7 @@ namespace OsmSharp.Data.SQLite.Osm
         /// <param name="tile">The tile to fetch geometries from</param>
         /// <param name="filter">Filtering options for the results</param>
         /// <returns>An OsmGeoCollection object containing the data within the given tile</returns>
-        public OsmGeoCollection GetCollection(Tile tile, Filter filter)
+        public override OsmGeoCollection GetCollection(Tile tile, Filter filter)
         {
             var tiles = new List<Tile>();
 
@@ -795,7 +792,7 @@ namespace OsmSharp.Data.SQLite.Osm
         /// <param name="tiles">The tiles to fetch geometries from</param>
         /// <param name="filter">Filtering options for the results</param>
         /// <returns>An OsmGeoCollection object containing the data within the given tile</returns>
-        public OsmGeoCollection GetCollection(IList<Tile> tiles, Filter filter)
+        public override OsmGeoCollection GetCollection(IList<Tile> tiles, Filter filter)
         {
             var geos = Get(tiles, filter);
             var collection = new OsmGeoCollection();
@@ -868,7 +865,7 @@ namespace OsmSharp.Data.SQLite.Osm
         /// </summary>
         /// <param name="type">The geo type</param>
         /// <param name="keys">The key filter, only return tag combinations with these keys</param>
-        public HashSet<TagsCollectionBase> UniqueTags(OsmGeoType type, List<string> keys = null)
+        public override HashSet<TagsCollectionBase> UniqueTags(OsmGeoType type, List<string> keys = null)
         {
             if (keys != null)
             {
@@ -927,7 +924,7 @@ namespace OsmSharp.Data.SQLite.Osm
         /// </summary>
         /// <param name="type">The geo type</param>
         /// <param name="key">The key filter, only return tag combinations with this key</param>
-        public HashSet<TagsCollectionBase> UniqueTags(OsmGeoType type, string key)
+        public override HashSet<TagsCollectionBase> UniqueTags(OsmGeoType type, string key)
         {
             return UniqueTags(type, new List<string>() { key });
         }
@@ -935,7 +932,7 @@ namespace OsmSharp.Data.SQLite.Osm
         /// <summary>
         /// Returns all ways matching the tag passed
         /// </summary>
-        public OsmGeoCollection GetGeosGivenTag(OsmGeoType type, string tag, List<string> values)
+        public override OsmGeoCollection GetGeosGivenTag(OsmGeoType type, string tag, List<string> values)
         {
             var sql_command = string.Format(SELECT_GEO_IDS_GIVEN_TAGS, type.ToString().ToLower(),
                 tag, values.CommaSeperatedString());
@@ -962,7 +959,7 @@ namespace OsmSharp.Data.SQLite.Osm
         /// <summary>
         /// Returns all ways matching the tags passed
         /// </summary>
-        public OsmGeoCollection GetGeosGivenTags(OsmGeoType type, Dictionary<string, List<string>> tags)
+        public override OsmGeoCollection GetGeosGivenTags(OsmGeoType type, Dictionary<string, List<string>> tags)
         {
             var sb = new StringBuilder();
             int index = 0;
