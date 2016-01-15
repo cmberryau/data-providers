@@ -15,6 +15,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OsmSharp.Data.Redis", "OsmS
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OsmSharp.Data.Test.Unittests", "OsmSharp.Data.Test.Unittests\OsmSharp.Data.Test.Unittests.csproj", "{EDBF254D-931A-4B3F-8062-56506AA56E1A}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OsmSharp.Data.MySQL", "OsmSharp.Data.MySQL\OsmSharp.Data.MySQL.csproj", "{71CB8F84-08EA-4D0E-97E8-FC5196CDA29B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -100,6 +102,24 @@ Global
 		{EDBF254D-931A-4B3F-8062-56506AA56E1A}.Release|x64.Build.0 = Release|x64
 		{EDBF254D-931A-4B3F-8062-56506AA56E1A}.Release|x86.ActiveCfg = Release|x86
 		{EDBF254D-931A-4B3F-8062-56506AA56E1A}.Release|x86.Build.0 = Release|x86
+		{71CB8F84-08EA-4D0E-97E8-FC5196CDA29B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{71CB8F84-08EA-4D0E-97E8-FC5196CDA29B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{71CB8F84-08EA-4D0E-97E8-FC5196CDA29B}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{71CB8F84-08EA-4D0E-97E8-FC5196CDA29B}.Debug|x64.Build.0 = Debug|Any CPU
+		{71CB8F84-08EA-4D0E-97E8-FC5196CDA29B}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{71CB8F84-08EA-4D0E-97E8-FC5196CDA29B}.Debug|x86.Build.0 = Debug|Any CPU
+		{71CB8F84-08EA-4D0E-97E8-FC5196CDA29B}.Release x64|Any CPU.ActiveCfg = Release|Any CPU
+		{71CB8F84-08EA-4D0E-97E8-FC5196CDA29B}.Release x64|Any CPU.Build.0 = Release|Any CPU
+		{71CB8F84-08EA-4D0E-97E8-FC5196CDA29B}.Release x64|x64.ActiveCfg = Release|Any CPU
+		{71CB8F84-08EA-4D0E-97E8-FC5196CDA29B}.Release x64|x64.Build.0 = Release|Any CPU
+		{71CB8F84-08EA-4D0E-97E8-FC5196CDA29B}.Release x64|x86.ActiveCfg = Release|Any CPU
+		{71CB8F84-08EA-4D0E-97E8-FC5196CDA29B}.Release x64|x86.Build.0 = Release|Any CPU
+		{71CB8F84-08EA-4D0E-97E8-FC5196CDA29B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{71CB8F84-08EA-4D0E-97E8-FC5196CDA29B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{71CB8F84-08EA-4D0E-97E8-FC5196CDA29B}.Release|x64.ActiveCfg = Release|Any CPU
+		{71CB8F84-08EA-4D0E-97E8-FC5196CDA29B}.Release|x64.Build.0 = Release|Any CPU
+		{71CB8F84-08EA-4D0E-97E8-FC5196CDA29B}.Release|x86.ActiveCfg = Release|Any CPU
+		{71CB8F84-08EA-4D0E-97E8-FC5196CDA29B}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
