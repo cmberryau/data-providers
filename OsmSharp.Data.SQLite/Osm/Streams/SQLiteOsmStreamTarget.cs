@@ -121,6 +121,10 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
         private Dictionary<TagsCollectionBase, int> _unique_way_tags;
         private Dictionary<TagsCollectionBase, int> _unique_relation_tags;
 
+        private HashSet<long> _required_relations;
+        private HashSet<long> _required_ways;
+        private HashSet<long> _required_nodes;
+
         /// <summary>
         /// Creates a new SQLite target
         /// </summary>
@@ -262,7 +266,8 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
         /// <param name="way">The way to add to the db</param>
         public override void AddWay(Way way)
         {
-            if (_geo_filter.Evaluate(way))
+            // if the way passes the geo filter or is a dependency for another feature
+            if (_geo_filter.Evaluate(way) || _required_ways.Contains(way.Id.Value))
             {
                 if (_cached_ways.Count == WayBatchCount)
                 {
@@ -282,7 +287,8 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
         /// <param name="relation">The relation to add to the SQLite DB</param>
         public override void AddRelation(Relation relation)
         {
-            if (_geo_filter.Evaluate(relation))
+            // if the relation passes the geo filter or is a dependency for another feature
+            if (_geo_filter.Evaluate(relation) || _required_relations.Contains(relation.Id.Value))
             {
                 if (_cached_relations.Count == RelationBatchCount)
                 {
@@ -521,6 +527,11 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
             // relation caches
             _cached_relations = new List<Relation>();
             _cached_relation_members = new List<Tuple<long?, RelationMember, long?>>();
+
+            // dependency required members
+            _required_relations = new HashSet<long>();
+            _required_ways = new HashSet<long>();
+            _required_nodes = new HashSet<long>();
         }
 
         private SQLiteCommand CreateBatchCommand(SQLiteConnection connection,
@@ -721,14 +732,35 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
                 long? sequence_id = 0;
                 foreach (var relation_member in relation.Members)
                 {
-                    if (_cached_relation_members.Count == RelationMembersBatchCount)
+                    if(relation_member.MemberId.HasValue && relation_member.MemberType.HasValue)
                     {
-                        BatchAddRelationMembers(_cached_relation_members, _replaceRelationMembersBatchCommand);
-                    }
+                        CacheDependency(relation_member);
 
-                    _cached_relation_members.Add(new Tuple<long?, RelationMember, long?>(relation.Id, relation_member, sequence_id));
-                    ++sequence_id;
+                        if (_cached_relation_members.Count == RelationMembersBatchCount)
+                        {
+                            BatchAddRelationMembers(_cached_relation_members, _replaceRelationMembersBatchCommand);
+                        }
+
+                        _cached_relation_members.Add(new Tuple<long?, RelationMember, long?>(relation.Id, relation_member, sequence_id));
+                        ++sequence_id;
+                    }
                 }
+            }
+        }
+
+        private void CacheDependency(RelationMember relation_member)
+        {
+            if (relation_member.MemberType == OsmGeoType.Relation)
+            {
+                _required_relations.Add(relation_member.MemberId.Value);
+            }
+            else if (relation_member.MemberType == OsmGeoType.Way)
+            {
+                _required_ways.Add(relation_member.MemberId.Value);
+            }
+            else if (relation_member.MemberType == OsmGeoType.Node)
+            {
+                _required_nodes.Add(relation_member.MemberId.Value);
             }
         }
 

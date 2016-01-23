@@ -110,7 +110,8 @@ namespace OsmSharp.Data.SQLite.Osm
                                                                  @"member_type TINYINT NOT NULL, " +
                                                                  @"member_id BIGINT NOT NULL, " +
                                                                  @"member_role VARCHAR(100) NULL, " +
-                                                                 @"sequence_id BIGINT NOT NULL " +
+                                                                 @"sequence_id BIGINT NOT NULL, " +
+                                                                 @"PRIMARY KEY (relation_id, member_type, member_id, member_role, sequence_id) " +
                                                              @"); ";
 
         #endregion table commands
