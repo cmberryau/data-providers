@@ -16,7 +16,7 @@
 // You should have received a copy of the GNU General Public License
 // along with OsmSharp. If not, see <http://www.gnu.org/licenses/>.
 
-using System.Data.SQLite;
+using Mono.Data.Sqlite;
 using NUnit.Framework;
 using OsmSharp.Data.SQLite.Osm;
 using OsmSharp.Data.SQLite.Osm.Streams;
@@ -96,7 +96,7 @@ namespace OsmSharp.Data.Test.Unittests.SQLite
 
         #region SQLite Implementations
 
-        private SQLiteConnection _connection = null;
+        private SqliteConnection _connection = null;
 
         /// <summary>
         /// Notifies that the current test expects an empty database.
@@ -106,11 +106,11 @@ namespace OsmSharp.Data.Test.Unittests.SQLite
             _connection = null;
         }
 
-        private SQLiteConnection GetConnection()
+        private SqliteConnection GetConnection()
         {
             if (_connection == null)
             {
-                _connection = new SQLiteConnection("Data Source=:memory:;Version=3;New=True;");
+                _connection = new SqliteConnection("Data Source=:memory:;Version=3;New=True;");
             }
             return _connection;
         }

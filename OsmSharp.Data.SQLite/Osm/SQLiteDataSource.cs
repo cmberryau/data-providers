@@ -26,7 +26,7 @@ using OsmSharp.Osm.Filters;
 using OsmSharp.Osm.Tiles;
 using System;
 using System.Collections.Generic;
-using System.Data.SQLite;
+using Mono.Data.Sqlite;
 using System.Linq;
 using System.Text;
 
@@ -132,7 +132,7 @@ namespace OsmSharp.Data.SQLite.Osm
             }
         }
 
-        private SQLiteConnection _connection;
+        private SqliteConnection _connection;
         private readonly string _connection_string;
         private bool _connection_owner;
         private readonly bool _create_and_detect_schema;
@@ -342,7 +342,7 @@ namespace OsmSharp.Data.SQLite.Osm
         /// </summary>
         /// <param name="connection">The SQLite connection</param>
         /// <param name="create_schema">Do the db schema and tables need to be created?</param>
-        public SQLiteDataSource(SQLiteConnection connection, bool create_schema = false)
+        public SQLiteDataSource(SqliteConnection connection, bool create_schema = false)
         {
             _connection = connection;
             _create_and_detect_schema = create_schema;
@@ -478,7 +478,7 @@ namespace OsmSharp.Data.SQLite.Osm
                     {
                         var sql = string.Format(SELECT_WAYS, ids);
 
-                        using (var command = new SQLiteCommand(sql, EnsureConnection()))
+                        using (var command = new SqliteCommand(sql, EnsureConnection()))
                         {
                             using (var reader = command.ExecuteReader())
                             {
@@ -555,7 +555,7 @@ namespace OsmSharp.Data.SQLite.Osm
                 var sql = string.Format(SELECT_WAYS_FROM_NODES, node_ids_string);
                 var way_ids = new List<long>();
 
-                using (var command = new SQLiteCommand(sql, EnsureConnection()))
+                using (var command = new SqliteCommand(sql, EnsureConnection()))
                 {
                     using (var reader = command.ExecuteReader())
                     {
@@ -597,7 +597,7 @@ namespace OsmSharp.Data.SQLite.Osm
                     if (ids.Length > 0)
                     {
                         var sql = string.Format(SELECT_RELATIONS, ids);
-                        using (var command = new SQLiteCommand(sql, EnsureConnection()))
+                        using (var command = new SqliteCommand(sql, EnsureConnection()))
                         {
                             using (var reader = command.ExecuteReader())
                             {
@@ -691,7 +691,7 @@ namespace OsmSharp.Data.SQLite.Osm
             var sql = string.Format(SELECT_RELATIONS_FOR_MEMBER, id, SchemaTools.ConvertMemberTypeShort(type));
             var relation_ids = new List<long>();
 
-            using (var command = new SQLiteCommand(sql, EnsureConnection()))
+            using (var command = new SqliteCommand(sql, EnsureConnection()))
             {
                 using (var reader = command.ExecuteReader())
                 {
@@ -889,7 +889,7 @@ namespace OsmSharp.Data.SQLite.Osm
 
             Dictionary<int, TagsCollectionBase> uniques;
 
-            using (var command = new SQLiteCommand(sql, _connection))
+            using (var command = new SqliteCommand(sql, _connection))
             {
                 using (var reader = command.ExecuteReader())
                 {
@@ -1023,11 +1023,11 @@ namespace OsmSharp.Data.SQLite.Osm
             Close();
         }
 
-        private SQLiteConnection EnsureConnection()
+        private SqliteConnection EnsureConnection()
         {
             if (_connection == null)
             {
-                _connection = new SQLiteConnection(_connection_string);
+                _connection = new SqliteConnection(_connection_string);
                 _connection_owner = true;
             }
 
@@ -1079,7 +1079,7 @@ namespace OsmSharp.Data.SQLite.Osm
                             sql = string.Format(sql_command, new_args.ToArray());
                         }
 
-                        using (var command = new SQLiteCommand(sql, EnsureConnection()))
+                        using (var command = new SqliteCommand(sql, EnsureConnection()))
                         {
                             using (var reader = command.ExecuteReader())
                             {
@@ -1099,17 +1099,17 @@ namespace OsmSharp.Data.SQLite.Osm
             return return_list;
         }
 
-        private long ReadOneInt64(SQLiteDataReader reader)
+        private long ReadOneInt64(SqliteDataReader reader)
         {
             return reader.GetInt64(0);
         }
 
-        private Tuple<long, long> ReadTwoInt64s(SQLiteDataReader reader)
+        private Tuple<long, long> ReadTwoInt64s(SqliteDataReader reader)
         {
             return new Tuple<long, long>(reader.GetInt64(0), reader.GetInt64(1));
         }
 
-        private Tuple<long, int> ReadOneInt64OneInt32(SQLiteDataReader reader)
+        private Tuple<long, int> ReadOneInt64OneInt32(SqliteDataReader reader)
         {
             return new Tuple<long, int>(reader.GetInt64(0), reader.GetInt32(1));
         }
@@ -1118,7 +1118,7 @@ namespace OsmSharp.Data.SQLite.Osm
 
         #region private tag queries
 
-        private void GetTags(SQLiteConnection connection, Dictionary<long, Node> id_nodes)
+        private void GetTags(SqliteConnection connection, Dictionary<long, Node> id_nodes)
         {
             var geo_list = new Dictionary<long, OsmGeo>();
 
@@ -1130,7 +1130,7 @@ namespace OsmSharp.Data.SQLite.Osm
             GetTags(connection, geo_list, OsmGeoType.Node);
         }
 
-        private void GetTags(SQLiteConnection connection, Dictionary<long, Way> id_ways)
+        private void GetTags(SqliteConnection connection, Dictionary<long, Way> id_ways)
         {
             var geo_list = new Dictionary<long, OsmGeo>();
 
@@ -1142,7 +1142,7 @@ namespace OsmSharp.Data.SQLite.Osm
             GetTags(connection, geo_list, OsmGeoType.Way);
         }
 
-        private void GetTags(SQLiteConnection connection, Dictionary<long, Relation> id_relations)
+        private void GetTags(SqliteConnection connection, Dictionary<long, Relation> id_relations)
         {
             var geo_list = new Dictionary<long, OsmGeo>();
 
@@ -1154,7 +1154,7 @@ namespace OsmSharp.Data.SQLite.Osm
             GetTags(connection, geo_list, OsmGeoType.Relation);
         }
 
-        private void GetTags(SQLiteConnection connection, Dictionary<long, OsmGeo> id_geos,
+        private void GetTags(SqliteConnection connection, Dictionary<long, OsmGeo> id_geos,
             OsmGeoType type)
         {
             var geo_ids = id_geos.Keys.ToList();
@@ -1175,7 +1175,7 @@ namespace OsmSharp.Data.SQLite.Osm
                     {
                         var sql = string.Format(SELECT_GEO_TAG_IDS, type.ToString().ToLower(), ids);
 
-                        using (var command = new SQLiteCommand(sql, connection))
+                        using (var command = new SqliteCommand(sql, connection))
                         {
                             using (var reader = command.ExecuteReader())
                             {
@@ -1208,7 +1208,7 @@ namespace OsmSharp.Data.SQLite.Osm
                         {
                             var sql = string.Format(SELECT_TAGS_ID, type.ToString().ToLower(), ids);
 
-                            using (var command = new SQLiteCommand(sql, connection))
+                            using (var command = new SqliteCommand(sql, connection))
                             {
                                 using (var reader = command.ExecuteReader())
                                 {
@@ -1244,11 +1244,11 @@ namespace OsmSharp.Data.SQLite.Osm
             }
         }
 
-        private void GetTags(SQLiteConnection connection, OsmGeo geo)
+        private void GetTags(SqliteConnection connection, OsmGeo geo)
         {
             var sql = string.Format(SELECT_TAGS, geo.Type.ToString().ToLower(), geo.Id);
 
-            using (var command = new SQLiteCommand(sql, connection))
+            using (var command = new SqliteCommand(sql, connection))
             {
                 using (var reader = command.ExecuteReader())
                 {
@@ -1270,17 +1270,17 @@ namespace OsmSharp.Data.SQLite.Osm
             }
         }
 
-        private Tag ReadTag(SQLiteDataReader reader)
+        private Tag ReadTag(SqliteDataReader reader)
         {
             return new Tag(reader.GetString(0), reader.GetString(1));
         }
 
-        private Tuple<long, Tag> ReadInt64AndTag(SQLiteDataReader reader)
+        private Tuple<long, Tag> ReadInt64AndTag(SqliteDataReader reader)
         {
             return new Tuple<long, Tag>(reader.GetInt64(0), new Tag(reader.GetString(1), reader.GetString(2)));
         }
 
-        private Tuple<int, Tag> ReadInt32AndTag(SQLiteDataReader reader)
+        private Tuple<int, Tag> ReadInt32AndTag(SqliteDataReader reader)
         {
             return new Tuple<int, Tag>(reader.GetInt32(0), new Tag(reader.GetString(1), reader.GetString(2)));
         }
@@ -1323,7 +1323,7 @@ namespace OsmSharp.Data.SQLite.Osm
                             sql = string.Format(sql_command, new_args.ToArray());
                         }
 
-                        using (var command = new SQLiteCommand(sql, EnsureConnection()))
+                        using (var command = new SqliteCommand(sql, EnsureConnection()))
                         {
                             using (var reader = command.ExecuteReader())
                             {
@@ -1350,7 +1350,7 @@ namespace OsmSharp.Data.SQLite.Osm
             return return_list;
         }
 
-        private Node ReadNode(SQLiteDataReader reader)
+        private Node ReadNode(SqliteDataReader reader)
         {
             var node = new Node();
 
@@ -1378,7 +1378,7 @@ namespace OsmSharp.Data.SQLite.Osm
 
             if (!string.IsNullOrEmpty(sql_command))
             {
-                using (var command = new SQLiteCommand(sql_command, EnsureConnection()))
+                using (var command = new SqliteCommand(sql_command, EnsureConnection()))
                 {
                     using (var reader = command.ExecuteReader())
                     {
@@ -1397,7 +1397,7 @@ namespace OsmSharp.Data.SQLite.Osm
             return way_ids;
         }
 
-        private Way ReadWay(SQLiteDataReader reader)
+        private Way ReadWay(SqliteDataReader reader)
         {
             var way = new Way();
 
@@ -1413,11 +1413,11 @@ namespace OsmSharp.Data.SQLite.Osm
             return way;
         }
 
-        private void GetWayNodes(SQLiteConnection connection, Way way)
+        private void GetWayNodes(SqliteConnection connection, Way way)
         {
             var sql = string.Format(SELECT_WAY_NODE_IDS, way.Id);
 
-            using (var command = new SQLiteCommand(sql, connection))
+            using (var command = new SqliteCommand(sql, connection))
             {
                 using (var reader = command.ExecuteReader())
                 {
@@ -1438,13 +1438,13 @@ namespace OsmSharp.Data.SQLite.Osm
             }
         }
 
-        private void GetWaysNodes(SQLiteConnection connection, string way_ids, Dictionary<long, Way> id_ways)
+        private void GetWaysNodes(SqliteConnection connection, string way_ids, Dictionary<long, Way> id_ways)
         {
             if (way_ids.Length > 0)
             {
                 var sql = string.Format(SELECT_WAYS_IDS_NODES, way_ids);
 
-                using (var command = new SQLiteCommand(sql, EnsureConnection()))
+                using (var command = new SqliteCommand(sql, EnsureConnection()))
                 {
                     using (var reader = command.ExecuteReader())
                     {
@@ -1525,7 +1525,7 @@ namespace OsmSharp.Data.SQLite.Osm
                     SchemaTools.ConvertMemberTypeShort(member_type));
                 var relation_ids = new List<long>();
 
-                using (var command = new SQLiteCommand(sql, EnsureConnection()))
+                using (var command = new SqliteCommand(sql, EnsureConnection()))
                 {
                     using (var reader = command.ExecuteReader())
                     {
@@ -1542,7 +1542,7 @@ namespace OsmSharp.Data.SQLite.Osm
             return new List<Relation>();
         }
 
-        private Relation ReadRelation(SQLiteDataReader reader)
+        private Relation ReadRelation(SqliteDataReader reader)
         {
             var relation = new Relation();
 
@@ -1558,11 +1558,11 @@ namespace OsmSharp.Data.SQLite.Osm
             return relation;
         }
 
-        private void GetRelationMembers(SQLiteConnection connection, Relation relation)
+        private void GetRelationMembers(SqliteConnection connection, Relation relation)
         {
             var sql = string.Format(SELECT_RELATION_MEMBERS, relation.Id);
 
-            using (var command = new SQLiteCommand(sql, connection))
+            using (var command = new SqliteCommand(sql, connection))
             {
                 using (var reader = command.ExecuteReader())
                 {
@@ -1581,13 +1581,13 @@ namespace OsmSharp.Data.SQLite.Osm
             }
         }
 
-        private void GetRelationsMembers(SQLiteConnection connection, string relation_ids, Dictionary<long, Relation> id_relations)
+        private void GetRelationsMembers(SqliteConnection connection, string relation_ids, Dictionary<long, Relation> id_relations)
         {
             if (relation_ids.Length > 0)
             {
                 var sql = string.Format(SELECT_RELATIONS_IDS_MEMBERS, relation_ids);
 
-                using (var command = new SQLiteCommand(sql, EnsureConnection()))
+                using (var command = new SqliteCommand(sql, EnsureConnection()))
                 {
                     using (var reader = command.ExecuteReader())
                     {
@@ -1609,7 +1609,7 @@ namespace OsmSharp.Data.SQLite.Osm
             }
         }
 
-        private RelationMember ReadRelationMember(SQLiteDataReader reader)
+        private RelationMember ReadRelationMember(SqliteDataReader reader)
         {
             var relation_member = new RelationMember();
 
@@ -1620,7 +1620,7 @@ namespace OsmSharp.Data.SQLite.Osm
             return relation_member;
         }
 
-        private Tuple<long, RelationMember> ReadRelationIdAndMember(SQLiteDataReader reader)
+        private Tuple<long, RelationMember> ReadRelationIdAndMember(SqliteDataReader reader)
         {
             var relation_member = new RelationMember();
 

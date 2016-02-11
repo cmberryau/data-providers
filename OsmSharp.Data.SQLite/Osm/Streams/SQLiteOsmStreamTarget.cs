@@ -23,7 +23,7 @@ using OsmSharp.Osm.Tiles;
 using System;
 using System.Collections.Generic;
 using System.Data;
-using System.Data.SQLite;
+using Mono.Data.Sqlite;
 using System.Text;
 using OsmSharp.Osm.Filters;
 
@@ -50,7 +50,7 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
             }
         }
 
-        private SQLiteConnection _connection;
+        private SqliteConnection _connection;
         private readonly string _connection_string;
         private readonly bool _create_and_detect_schema;
 
@@ -61,18 +61,18 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
                                        @"VALUES " +
                                            @"{2};";
 
-        private Dictionary<OsmGeoType, SQLiteCommand> _replaceTagBatchCommands;
-        private Dictionary<OsmGeoType, SQLiteCommand> _replaceTagFlushCommands;
-        private SQLiteCommand _replaceNodeBatchCommand;
-        private SQLiteCommand _replaceNodeFlushCommand;
-        private SQLiteCommand _replaceWayBatchCommand;
-        private SQLiteCommand _replaceWayFlushCommand;
-        private SQLiteCommand _replaceWayNodesBatchCommand;
-        private SQLiteCommand _replaceWayNodesFlushCommand;
-        private SQLiteCommand _replaceRelationBatchCommand;
-        private SQLiteCommand _replaceRelationFlushCommand;
-        private SQLiteCommand _replaceRelationMembersBatchCommand;
-        private SQLiteCommand _replaceRelationMembersFlushCommand;
+        private Dictionary<OsmGeoType, SqliteCommand> _replaceTagBatchCommands;
+        private Dictionary<OsmGeoType, SqliteCommand> _replaceTagFlushCommands;
+        private SqliteCommand _replaceNodeBatchCommand;
+        private SqliteCommand _replaceNodeFlushCommand;
+        private SqliteCommand _replaceWayBatchCommand;
+        private SqliteCommand _replaceWayFlushCommand;
+        private SqliteCommand _replaceWayNodesBatchCommand;
+        private SqliteCommand _replaceWayNodesFlushCommand;
+        private SqliteCommand _replaceRelationBatchCommand;
+        private SqliteCommand _replaceRelationFlushCommand;
+        private SqliteCommand _replaceRelationMembersBatchCommand;
+        private SqliteCommand _replaceRelationMembersFlushCommand;
 
         private const int DefaultNodeBatchCount = 128;
         private const int NodeParamsCount = 6;
@@ -132,7 +132,7 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
         /// <param name="create_schema">Do the db tables need to be created?</param>
         /// <param name="geo_filter">The geos filter to be used</param>
         /// <param name="tag_filter">The tags filter to be used</param>
-        public SQLiteOsmStreamTarget(SQLiteConnection connection, bool create_schema = false,
+        public SQLiteOsmStreamTarget(SqliteConnection connection, bool create_schema = false,
                                      Filter geo_filter = null, TagFilter tag_filter = null)
         {
             if (geo_filter == null)
@@ -226,7 +226,7 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
         {
             if (_connection == null)
             {
-                _connection = new SQLiteConnection(_connection_string);
+                _connection = new SqliteConnection(_connection_string);
                 ConnectionOwner = true;
             }
             if (_connection.State != System.Data.ConnectionState.Open)
@@ -416,11 +416,11 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
             }
         }
 
-        private void InitializeCommands(SQLiteConnection connection)
+        private void InitializeCommands(SqliteConnection connection)
         {
             // tag commands
-            _replaceTagBatchCommands = new Dictionary<OsmGeoType, SQLiteCommand>();
-            _replaceTagFlushCommands = new Dictionary<OsmGeoType, SQLiteCommand>();
+            _replaceTagBatchCommands = new Dictionary<OsmGeoType, SqliteCommand>();
+            _replaceTagFlushCommands = new Dictionary<OsmGeoType, SqliteCommand>();
 
             var command_params = new Tuple<string, DbType>[3];
 
@@ -534,7 +534,7 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
             _required_nodes = new HashSet<long>();
         }
 
-        private SQLiteCommand CreateBatchCommand(SQLiteConnection connection,
+        private SqliteCommand CreateBatchCommand(SqliteConnection connection,
             string sql_base, string table_name, int batch_count, params Tuple<string, DbType>[] parameters)
         {
             // fill out the parameters definition string
@@ -572,7 +572,7 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
             var sql = String.Format(sql_base, table_name, params_sb, values_sb);
 
             // create the command
-            var command = new SQLiteCommand(sql, connection);
+            var command = new SqliteCommand(sql, connection);
 
             // load parameters into the command
             for (var i = 0; i < batch_count; ++i)
@@ -586,7 +586,7 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
             return command;
         }
 
-        private SQLiteCommand CreateFlushCommand(SQLiteConnection connection, string flush,
+        private SqliteCommand CreateFlushCommand(SqliteConnection connection, string flush,
             string table_name, params Tuple<string, DbType>[] parameters)
         {
             // fill out the parameters definition string
@@ -609,7 +609,7 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
             var sql = String.Format(flush, table_name, params_sb, values_sb);
 
             // create the command
-            var command = new SQLiteCommand(sql, connection);
+            var command = new SqliteCommand(sql, connection);
 
             // load parameters into the command
             foreach (var parameter in parameters)
@@ -620,7 +620,7 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
             return command;
         }
 
-        private void ProcessTagsIdAndName(SQLiteCommand command, OsmGeo geo,
+        private void ProcessTagsIdAndName(SqliteCommand command, OsmGeo geo,
             Dictionary<TagsCollectionBase, int> _uniques, int params_count, int batch_index = 0)
         {
             // name & tags id
@@ -764,7 +764,7 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
             }
         }
 
-        private void BatchAddNodes(List<Node> nodes, SQLiteCommand command)
+        private void BatchAddNodes(List<Node> nodes, SqliteCommand command)
         {
             var i = 0;
             foreach (var node in nodes)
@@ -793,7 +793,7 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
             nodes.Clear();
         }
 
-        private void FlushAddNodes(List<Node> nodes, SQLiteCommand command)
+        private void FlushAddNodes(List<Node> nodes, SqliteCommand command)
         {
             foreach (var node in nodes)
             {
@@ -819,7 +819,7 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
             nodes.Clear();
         }
 
-        private void BatchAddWays(List<Way> ways, SQLiteCommand command)
+        private void BatchAddWays(List<Way> ways, SqliteCommand command)
         {
             var i = 0;
             foreach (var way in ways)
@@ -839,7 +839,7 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
             ways.Clear();
         }
 
-        private void FlushAddWays(List<Way> ways, SQLiteCommand command)
+        private void FlushAddWays(List<Way> ways, SqliteCommand command)
         {
             foreach (var way in ways)
             {
@@ -856,7 +856,7 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
             ways.Clear();
         }
 
-        private void BatchAddWayNodes(List<Tuple<long?, long?, long?>> way_nodes, SQLiteCommand command
+        private void BatchAddWayNodes(List<Tuple<long?, long?, long?>> way_nodes, SqliteCommand command
             )
         {
             var i = 0;
@@ -875,7 +875,7 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
             way_nodes.Clear();
         }
 
-        private void FlushAddWayNodes(List<Tuple<long?, long?, long?>> way_nodes, SQLiteCommand command)
+        private void FlushAddWayNodes(List<Tuple<long?, long?, long?>> way_nodes, SqliteCommand command)
         {
             foreach (var way_node in way_nodes)
             {
@@ -890,7 +890,7 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
             way_nodes.Clear();
         }
 
-        private void BatchAddRelations(List<Relation> relations, SQLiteCommand command)
+        private void BatchAddRelations(List<Relation> relations, SqliteCommand command)
         {
             var i = 0;
             foreach (var relation in relations)
@@ -910,7 +910,7 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
             relations.Clear();
         }
 
-        private void FlushAddRelations(List<Relation> relations, SQLiteCommand command)
+        private void FlushAddRelations(List<Relation> relations, SqliteCommand command)
         {
             foreach (var relation in relations)
             {
@@ -927,7 +927,7 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
             relations.Clear();
         }
 
-        private void BatchAddRelationMembers(List<Tuple<long?, RelationMember, long?>> relation_members, SQLiteCommand command)
+        private void BatchAddRelationMembers(List<Tuple<long?, RelationMember, long?>> relation_members, SqliteCommand command)
         {
             var i = 0;
             foreach (var relation_member in relation_members)
@@ -961,7 +961,7 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
             relation_members.Clear();
         }
 
-        private void FlushAddRelationMembers(List<Tuple<long?, RelationMember, long?>> relation_members, SQLiteCommand command)
+        private void FlushAddRelationMembers(List<Tuple<long?, RelationMember, long?>> relation_members, SqliteCommand command)
         {
             foreach (var relation_member in relation_members)
             {
@@ -1030,7 +1030,7 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
             tags.Clear();
         }
 
-        private void DisposeCommandDictionary(Dictionary<OsmGeoType, SQLiteCommand> commands)
+        private void DisposeCommandDictionary(Dictionary<OsmGeoType, SqliteCommand> commands)
         {
             foreach (var command in commands)
             {

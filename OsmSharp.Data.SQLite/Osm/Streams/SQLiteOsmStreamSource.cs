@@ -21,7 +21,7 @@ using OsmSharp.Osm;
 using OsmSharp.Osm.Streams;
 using System;
 using System.Collections.Generic;
-using System.Data.SQLite;
+using Mono.Data.Sqlite;
 
 namespace OsmSharp.Data.SQLite.Osm.Streams
 {
@@ -35,7 +35,7 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
         /// <summary>
         /// Holds the connection.
         /// </summary>
-        private SQLiteConnection _connection;
+        private SqliteConnection _connection;
 
         /// <summary>
         /// Holds the connection string.
@@ -102,7 +102,7 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
         /// </summary>
         /// <param name="connection">The SQLite connection</param>
         /// <param name="create_schema">Do the db schema and tables need to be created?</param>
-        public SQLiteOsmStreamSource(SQLiteConnection connection, bool create_schema = false)
+        public SQLiteOsmStreamSource(SqliteConnection connection, bool create_schema = false)
         {
             _connection = connection;
             _id = Guid.NewGuid();
@@ -115,11 +115,11 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
 
         #endregion constructors
 
-        private SQLiteConnection EnsureConnection()
+        private SqliteConnection EnsureConnection()
         {
             if (_connection == null)
             {
-                _connection = new SQLiteConnection(_connection_string);
+                _connection = new SqliteConnection(_connection_string);
             }
 
             if (_connection.State != System.Data.ConnectionState.Open)
@@ -199,31 +199,31 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
 
         #region MoveNext fuctions
 
-        private SQLiteDataReader _node_reader;
-        private SQLiteDataReader _way_reader;
-        private SQLiteDataReader _way_tag_reader;
-        private SQLiteDataReader _way_node_reader;
-        private SQLiteDataReader _relation_reader;
-        private SQLiteDataReader _relation_tag_reader;
-        private SQLiteDataReader _relation_member_reader;
+        private SqliteDataReader _node_reader;
+        private SqliteDataReader _way_reader;
+        private SqliteDataReader _way_tag_reader;
+        private SqliteDataReader _way_node_reader;
+        private SqliteDataReader _relation_reader;
+        private SqliteDataReader _relation_tag_reader;
+        private SqliteDataReader _relation_member_reader;
 
         private bool DoMoveNextRelation()
         {
             if (_relation_reader == null)
             {
-                var relationCommand = new SQLiteCommand("select * from relation order by id", _connection);
+                var relationCommand = new SqliteCommand("select * from relation order by id", _connection);
                 _relation_reader = relationCommand.ExecuteReader();
                 if (!_relation_reader.Read())
                 {
                     _relation_reader.Close();
                 }
-                var relationTagCommand = new SQLiteCommand("select * from relation_tags order by relation_id", _connection);
+                var relationTagCommand = new SqliteCommand("select * from relation_tags order by relation_id", _connection);
                 _relation_tag_reader = relationTagCommand.ExecuteReader();
                 if (!_relation_tag_reader.IsClosed && !_relation_tag_reader.Read())
                 {
                     _relation_tag_reader.Close();
                 }
-                var relationNodeCommand = new SQLiteCommand("select * from relation_members order by relation_id,sequence_id", _connection);
+                var relationNodeCommand = new SqliteCommand("select * from relation_members order by relation_id,sequence_id", _connection);
                 _relation_member_reader = relationNodeCommand.ExecuteReader();
                 if (!_relation_member_reader.IsClosed && !_relation_member_reader.Read())
                 {
@@ -364,7 +364,7 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
         {
             if (_node_reader == null)
             {
-                SQLiteCommand node_command = new SQLiteCommand("select * from node left join node_tags on node_tags.node_id = node.id order by node.id");
+                SqliteCommand node_command = new SqliteCommand("select * from node left join node_tags on node_tags.node_id = node.id order by node.id");
                 node_command.Connection = _connection;
                 _node_reader = node_command.ExecuteReader();
                 if (!_node_reader.Read())
@@ -423,21 +423,21 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
         {
             if (_way_reader == null)
             {
-                SQLiteCommand way_command = new SQLiteCommand("select * from way where id > 26478817 order by id");
+                SqliteCommand way_command = new SqliteCommand("select * from way where id > 26478817 order by id");
                 way_command.Connection = _connection;
                 _way_reader = way_command.ExecuteReader();
                 if (!_way_reader.Read())
                 {
                     _way_reader.Close();
                 }
-                SQLiteCommand way_tag_command = new SQLiteCommand("select * from way_tags where way_id > 26478817 order by way_id");
+                SqliteCommand way_tag_command = new SqliteCommand("select * from way_tags where way_id > 26478817 order by way_id");
                 way_tag_command.Connection = _connection;
                 _way_tag_reader = way_tag_command.ExecuteReader();
                 if (!_way_tag_reader.IsClosed && !_way_tag_reader.Read())
                 {
                     _way_tag_reader.Close();
                 }
-                SQLiteCommand way_node_command = new SQLiteCommand("select * from way_nodes where way_id > 26478817 order by way_id,sequence_id");
+                SqliteCommand way_node_command = new SqliteCommand("select * from way_nodes where way_id > 26478817 order by way_id,sequence_id");
                 way_node_command.Connection = _connection;
                 _way_node_reader = way_node_command.ExecuteReader();
                 if (!_way_node_reader.IsClosed && !_way_node_reader.Read())
