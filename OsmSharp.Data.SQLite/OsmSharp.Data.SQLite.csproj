@@ -97,6 +97,9 @@
     <DocumentationFile>..\Output\OsmSharp.Data.SQLite.XML</DocumentationFile>
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
+  <PropertyGroup>
+    <RunPostBuildEvent>OnOutputUpdated</RunPostBuildEvent>
+  </PropertyGroup>
   <ItemGroup>
     <Reference Include="OsmSharp, Version=0.0.0.44, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
