@@ -436,7 +436,7 @@ namespace OsmSharp.Data.SQLite.Osm
         internal static string BuildConnectionString(bool in_memory, string path = null,
                                                      string password = null, bool compressed = true)
         {
-            var connection_string = "FullUri=file:";
+            var connection_string = "Data Source=";
 
             if (in_memory)
             {
