@@ -26,6 +26,7 @@ using OsmSharp.Osm.Filters;
 using OsmSharp.Osm.Tiles;
 using System;
 using System.Collections.Generic;
+using System.Data;
 using Mono.Data.Sqlite;
 using System.Linq;
 using System.Text;
@@ -299,6 +300,45 @@ namespace OsmSharp.Data.SQLite.Osm
         private const string UNION = @"UNION";
 
         #endregion command strings
+
+        /// <summary>
+        /// The version of Sqlite that is loaded into the process
+        /// </summary>
+        public static string SqliteVersion
+        {
+            get
+            {
+                var version = "Unknown";
+                // create an empty in-memory db
+                var connection_string = SQLiteSchemaTools.BuildConnectionString(true);
+                using (var connection = new SqliteConnection(connection_string))
+                {
+                    connection.Open();
+
+                    if (connection.State == ConnectionState.Open)
+                    {
+                        using (var command = new SqliteCommand(@"SELECT sqlite_version();", connection))
+                        {
+                            using (var reader = command.ExecuteReader())
+                            {
+                                while (reader.Read())
+                                {
+                                    var fetched = reader.GetString(0);
+
+                                    if (!fetched.IsNullOrWhiteSpace())
+                                    {
+                                        version = fetched;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+
+                return version;
+            }
+        }
 
         /// <summary>
         /// Creates a new SQLite data source
