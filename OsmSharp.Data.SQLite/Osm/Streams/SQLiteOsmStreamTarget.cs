@@ -229,7 +229,7 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
                 _connection = new SqliteConnection(_connection_string);
                 ConnectionOwner = true;
             }
-            if (_connection.State != System.Data.ConnectionState.Open)
+            if (_connection.State != ConnectionState.Open)
             {
                 _connection.Open();
             }
@@ -635,7 +635,7 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
                     // we should have those filtered tags in the unique dict
                     if (_uniques.ContainsKey(filtered_tags))
                     {
-                        command.Parameters[(batch_index * params_count) + params_count - 2].Value = _uniques[filtered_tags];
+                        command.Parameters[batch_index * params_count + params_count - 2].Value = _uniques[filtered_tags];
 
                         // we only add geo names if they are of interest via tags
                         if (geo.Tags.ContainsKey("name"))
@@ -644,16 +644,16 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
 
                             if (!string.IsNullOrEmpty(name))
                             {
-                                command.Parameters[(batch_index * params_count) + params_count - 1].Value = name.Truncate(500);
+                                command.Parameters[batch_index * params_count + params_count - 1].Value = name.Truncate(500);
                             }
                             else
                             {
-                                command.Parameters[(batch_index * params_count) + params_count - 1].Value = DBNull.Value;
+                                command.Parameters[batch_index * params_count + params_count - 1].Value = DBNull.Value;
                             }
                         }
                         else
                         {
-                            command.Parameters[(batch_index * params_count) + params_count - 1].Value = DBNull.Value;
+                            command.Parameters[batch_index * params_count + params_count - 1].Value = DBNull.Value;
                         }
                     }
                     // if not, somethings wrong!
@@ -666,15 +666,15 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
                 // no tags of interest, name and tag id are null
                 else
                 {
-                    command.Parameters[(batch_index * params_count) + params_count - 2].Value = DBNull.Value;
-                    command.Parameters[(batch_index * params_count) + params_count - 1].Value = DBNull.Value;
+                    command.Parameters[batch_index * params_count + params_count - 2].Value = DBNull.Value;
+                    command.Parameters[batch_index * params_count + params_count - 1].Value = DBNull.Value;
                 }
             }
             // no tags at all, name and tag id are null
             else
             {
-                command.Parameters[(batch_index * params_count) + params_count - 2].Value = DBNull.Value;
-                command.Parameters[(batch_index * params_count) + params_count - 1].Value = DBNull.Value;
+                command.Parameters[batch_index * params_count + params_count - 2].Value = DBNull.Value;
+                command.Parameters[batch_index * params_count + params_count - 1].Value = DBNull.Value;
             }
         }
 
@@ -770,16 +770,16 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
             foreach (var node in nodes)
             {
                 // id
-                command.Parameters[(i * NodeParamsCount) + 0].Value = node.Id.ConvertToDBValue<long>();
+                command.Parameters[i * NodeParamsCount + 0].Value = node.Id.ConvertToDBValue<long>();
 
                 // lat & lon
                 int? latitude = SQLiteSchemaTools.GeoToDB((double)node.Latitude);
-                command.Parameters[(i * NodeParamsCount) + 1].Value = latitude.ConvertToDBValue<int>();
+                command.Parameters[i * NodeParamsCount + 1].Value = latitude.ConvertToDBValue<int>();
                 int? longitude = SQLiteSchemaTools.GeoToDB((double)node.Longitude);
-                command.Parameters[(i * NodeParamsCount) + 2].Value = longitude.ConvertToDBValue<int>();
+                command.Parameters[i * NodeParamsCount + 2].Value = longitude.ConvertToDBValue<int>();
 
                 // tile
-                command.Parameters[(i * NodeParamsCount) + 3].Value = Tile.CreateAroundLocation(new Math.Geo.GeoCoordinate(node.Latitude.Value, node.Longitude.Value), SQLiteSchemaTools.DefaultTileZoomLevel).Id;
+                command.Parameters[i * NodeParamsCount + 3].Value = Tile.CreateAroundLocation(new Math.Geo.GeoCoordinate(node.Latitude.Value, node.Longitude.Value), SQLiteSchemaTools.DefaultTileZoomLevel).Id;
 
                 // tags id and name
                 ProcessTagsIdAndName(command, node, _unique_node_tags, NodeParamsCount, i);
@@ -787,7 +787,14 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
                 ++i;
             }
 
-            command.ExecuteNonQuery();
+            try
+            {
+                command.ExecuteNonQuery();
+            }
+            catch (Exception e)
+            {
+                throw new Exception("BatchAddNodes failed with the following message: " + e.Message + " With the following command: \n" + command.CommandText);
+            }
 
             _node_count += nodes.Count;
             nodes.Clear();
@@ -812,7 +819,14 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
                 // tags id and name
                 ProcessTagsIdAndName(command, node, _unique_node_tags, NodeParamsCount);
 
-                command.ExecuteNonQuery();
+                try
+                {
+                    command.ExecuteNonQuery();
+                }
+                catch (Exception e)
+                {
+                    throw new Exception("FlushAddNodes failed with the following message: " + e.Message + " With the following command: \n" + command.CommandText);
+                }
             }
 
             _node_count += nodes.Count;
@@ -825,7 +839,7 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
             foreach (var way in ways)
             {
                 // id
-                command.Parameters[(i * 3) + 0].Value = way.Id.ConvertToDBValue<long>();
+                command.Parameters[i * 3 + 0].Value = way.Id.ConvertToDBValue<long>();
 
                 // tags id and name
                 ProcessTagsIdAndName(command, way, _unique_way_tags, WayParamsCount, i);
@@ -833,7 +847,14 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
                 ++i;
             }
 
-            command.ExecuteNonQuery();
+            try
+            {
+                command.ExecuteNonQuery();
+            }
+            catch (Exception e)
+            {
+                throw new Exception("BatchAddWays failed with the following message: " + e.Message + " With the following command: \n" + command.CommandText);
+            }
 
             _total_way_count += ways.Count;
             ways.Clear();
@@ -849,7 +870,14 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
                 // tags id and name
                 ProcessTagsIdAndName(command, way, _unique_way_tags, WayParamsCount);
 
-                command.ExecuteNonQuery();
+                try
+                {
+                    command.ExecuteNonQuery();
+                }
+                catch (Exception e)
+                {
+                    throw new Exception("FlushAddWays failed with the following message: " + e.Message + " With the following command: \n" + command.CommandText);
+                }
             }
 
             _total_way_count += ways.Count;
@@ -862,14 +890,21 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
             var i = 0;
             foreach (var way_node in way_nodes)
             {
-                command.Parameters[(i * 3) + 0].Value = way_node.Item1.ConvertToDBValue<long>();
-                command.Parameters[(i * 3) + 1].Value = way_node.Item2.ConvertToDBValue<long>();
-                command.Parameters[(i * 3) + 2].Value = way_node.Item3.ConvertToDBValue<long>();
+                command.Parameters[i * 3 + 0].Value = way_node.Item1.ConvertToDBValue<long>();
+                command.Parameters[i * 3 + 1].Value = way_node.Item2.ConvertToDBValue<long>();
+                command.Parameters[i * 3 + 2].Value = way_node.Item3.ConvertToDBValue<long>();
 
                 ++i;
             }
 
-            command.ExecuteNonQuery();
+            try
+            {
+                command.ExecuteNonQuery();
+            }
+            catch (Exception e)
+            {
+                throw new Exception("BatchAddWayNodes failed with the following message: " + e.Message + " With the following command: \n" + command.CommandText);
+            }
 
             _total_way_nodes_count += way_nodes.Count;
             way_nodes.Clear();
@@ -883,7 +918,14 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
                 command.Parameters[1].Value = way_node.Item2.ConvertToDBValue<long>();
                 command.Parameters[2].Value = way_node.Item3.ConvertToDBValue<long>();
 
-                command.ExecuteNonQuery();
+                try
+                {
+                    command.ExecuteNonQuery();
+                }
+                catch (Exception e)
+                {
+                    throw new Exception("FlushAddWayNodes failed with the following message: " + e.Message + " With the following command: \n" + command.CommandText);
+                }
             }
 
             _total_way_nodes_count += way_nodes.Count;
@@ -896,7 +938,7 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
             foreach (var relation in relations)
             {
                 // id
-                command.Parameters[(i * 3) + 0].Value = relation.Id.ConvertToDBValue<long>();
+                command.Parameters[i * 3 + 0].Value = relation.Id.ConvertToDBValue<long>();
 
                 // tags id and name
                 ProcessTagsIdAndName(command, relation, _unique_relation_tags, RelationParamsCount, i);
@@ -904,7 +946,14 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
                 ++i;
             }
 
-            command.ExecuteNonQuery();
+            try
+            {
+                command.ExecuteNonQuery();
+            }
+            catch (Exception e)
+            {
+                throw new Exception("BatchAddRelations failed with the following message: " + e.Message + " With the following command: \n" + command.CommandText);
+            }
 
             _total_relation_count += relations.Count;
             relations.Clear();
@@ -920,7 +969,14 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
                 // tags id and name
                 ProcessTagsIdAndName(command, relation, _unique_relation_tags, RelationParamsCount);
 
-                command.ExecuteNonQuery();
+                try
+                {
+                    command.ExecuteNonQuery();
+                }
+                catch (Exception e)
+                {
+                    throw new Exception("FlushAddRelations failed with the following message: " + e.Message + " With the following command: \n" + command.CommandText);
+                }
             }
 
             _total_relation_count += relations.Count;
@@ -932,30 +988,36 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
             var i = 0;
             foreach (var relation_member in relation_members)
             {
-                command.Parameters[(i * 5) + 0].Value = relation_member.Item1.ConvertToDBValue<long>();
+                command.Parameters[i * 5 + 0].Value = relation_member.Item1.ConvertToDBValue<long>();
 
                 if (relation_member.Item2.MemberType == OsmGeoType.Node)
                 {
-                    command.Parameters[(i * 5) + 1].Value = 0;
+                    command.Parameters[i * 5 + 1].Value = 0;
                 }
                 else if (relation_member.Item2.MemberType == OsmGeoType.Way)
                 {
-                    command.Parameters[(i * 5) + 1].Value = 1;
+                    command.Parameters[i * 5 + 1].Value = 1;
                 }
                 else if (relation_member.Item2.MemberType == OsmGeoType.Relation)
                 {
-                    command.Parameters[(i * 5) + 1].Value = 2;
+                    command.Parameters[i * 5 + 1].Value = 2;
                 }
 
-                command.Parameters[(i * 5) + 2].Value = relation_member.Item2.MemberId.ConvertToDBValue<long>();
+                command.Parameters[i * 5 + 2].Value = relation_member.Item2.MemberId.ConvertToDBValue<long>();
                 var member_role = relation_member.Item2.MemberRole;
-                command.Parameters[(i * 5) + 3].Value = member_role.Truncate(100);
-                command.Parameters[(i * 5) + 4].Value = relation_member.Item3.ConvertToDBValue<long>();
+                command.Parameters[i * 5 + 3].Value = member_role.Truncate(100);
+                command.Parameters[i * 5 + 4].Value = relation_member.Item3.ConvertToDBValue<long>();
 
                 ++i;
             }
-
-            command.ExecuteNonQuery();
+            try
+            {
+                command.ExecuteNonQuery();
+            }
+            catch (Exception e)
+            {
+                throw new Exception("BatchAddRelationMembers failed with the following message: " + e.Message + " With the following command: \n" + command.CommandText);
+            }
 
             _total_relation_members_count += relation_members.Count;
             relation_members.Clear();
@@ -985,7 +1047,14 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
                 command.Parameters[3].Value = member_role.Truncate(100);
                 command.Parameters[4].Value = relation_member.Item3.ConvertToDBValue<long>();
 
-                command.ExecuteNonQuery();
+                try
+                {
+                    command.ExecuteNonQuery();
+                }
+                catch (Exception e)
+                {
+                    throw new Exception("FlushAddRelationMembers failed with the following message: " + e.Message + " With the following command: \n" + command.CommandText);
+                }
             }
 
             _total_relation_members_count += relation_members.Count;
@@ -1001,9 +1070,9 @@ namespace OsmSharp.Data.SQLite.Osm.Streams
                 var key = tag.Item2.Key;
                 var value = tag.Item2.Value;
 
-                _replaceTagBatchCommands[type].Parameters[(i * 3) + 0].Value = tag.Item1;
-                _replaceTagBatchCommands[type].Parameters[(i * 3) + 1].Value = key.Truncate(100);
-                _replaceTagBatchCommands[type].Parameters[(i * 3) + 2].Value = value.Truncate(500);
+                _replaceTagBatchCommands[type].Parameters[i * 3 + 0].Value = tag.Item1;
+                _replaceTagBatchCommands[type].Parameters[i * 3 + 1].Value = key.Truncate(100);
+                _replaceTagBatchCommands[type].Parameters[i * 3 + 2].Value = value.Truncate(500);
 
                 ++i;
             }

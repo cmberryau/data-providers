@@ -440,7 +440,7 @@ namespace OsmSharp.Data.SQLite.Osm
 
             if (in_memory)
             {
-                connection_string += ":memory:?cache=shared;";
+                connection_string = "URI=file::memory:,";
             }
             else
             {
@@ -454,7 +454,7 @@ namespace OsmSharp.Data.SQLite.Osm
                 }
             }
 
-            connection_string += "Version=3;";
+            connection_string += "version=3;";
 
             if (password != null)
             {
