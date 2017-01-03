@@ -133,7 +133,6 @@
   <PropertyGroup>
     <PostBuildEvent>if exist $(ProjectDir)..\..\..\postbuild.bat (
    $(ProjectDir)..\..\..\postbuild.bat $(TargetDir) $(TargetName) $(ProjectDir)..\..\..\
-   $(ProjectDir)..\..\..\postbuild.bat $(TargetDir) System.Data.SQLite $(ProjectDir)..\..\..\
 )</PostBuildEvent>
   </PropertyGroup>
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 

@@ -755,7 +755,7 @@ namespace OsmSharp.Data.SQLite.Osm
         /// <param name="box">The bounding box to search within</param>
         /// <param name="filter">Filtering options for the results</param>
         /// <returns>Matching OsmGeos</returns>
-        public override IList<OsmGeo> Get(GeoCoordinateBox box, Filter filter)
+        public override IList<OsmGeo> Get(GeoCoordinateBox box, Filter filter = null)
         {
             var geos = new List<OsmGeo>();
 
@@ -768,6 +768,21 @@ namespace OsmSharp.Data.SQLite.Osm
             var relations = GetRelationsFor(geos);
             geos.AddRange(relations);
 
+            var filteredGeos = new List<OsmGeo>();
+
+            if (filter != null)
+            {
+                foreach (var geo in geos)
+                {
+                    if (filter.Evaluate(geo))
+                    {
+                        filteredGeos.Add(geo);
+                    }
+                }
+
+                geos = filteredGeos;
+            }
+
             return geos;
         }
 
@@ -777,7 +792,7 @@ namespace OsmSharp.Data.SQLite.Osm
         /// <param name="tiles">List of tiles to fetch geometries from</param>
         /// <param name="filter">Filtering options for the results</param>
         /// <returns>Matching OsmGeos</returns>
-        public IList<OsmGeo> Get(IList<Tile> tiles, Filter filter)
+        public IList<OsmGeo> Get(IList<Tile> tiles, Filter filter = null)
         {
             var geos = new List<OsmGeo>();
 
@@ -793,6 +808,21 @@ namespace OsmSharp.Data.SQLite.Osm
             geos.AddRange(relations);
             _geo_cache.AddRelations(relations);
 
+            var filteredGeos = new List<OsmGeo>();
+
+            if (filter != null)
+            {
+                foreach (var geo in geos)
+                {
+                    if (filter.Evaluate(geo))
+                    {
+                        filteredGeos.Add(geo);
+                    }
+                }
+
+                geos = filteredGeos;
+            }
+
             return geos;
         }
 
@@ -802,7 +832,7 @@ namespace OsmSharp.Data.SQLite.Osm
         /// <param name="tile">The tile to fetch geometries from</param>
         /// <param name="filter">Filtering options for the results</param>
         /// <returns>Matching OsmGeos</returns>
-        public IList<OsmGeo> Get(Tile tile, Filter filter)
+        public IList<OsmGeo> Get(Tile tile, Filter filter = null)
         {
             var tiles = new List<Tile>();
 
@@ -817,7 +847,7 @@ namespace OsmSharp.Data.SQLite.Osm
         /// <param name="tile">The tile to fetch geometries from</param>
         /// <param name="filter">Filtering options for the results</param>
         /// <returns>An OsmGeoCollection object containing the data within the given tile</returns>
-        public override OsmGeoCollection GetCollection(Tile tile, Filter filter)
+        public override OsmGeoCollection GetCollection(Tile tile, Filter filter = null)
         {
             var tiles = new List<Tile>();
 
@@ -832,7 +862,7 @@ namespace OsmSharp.Data.SQLite.Osm
         /// <param name="tiles">The tiles to fetch geometries from</param>
         /// <param name="filter">Filtering options for the results</param>
         /// <returns>An OsmGeoCollection object containing the data within the given tile</returns>
-        public override OsmGeoCollection GetCollection(IList<Tile> tiles, Filter filter)
+        public override OsmGeoCollection GetCollection(IList<Tile> tiles, Filter filter = null)
         {
             var geos = Get(tiles, filter);
             var collection = new OsmGeoCollection();
@@ -869,7 +899,7 @@ namespace OsmSharp.Data.SQLite.Osm
         /// <param name="box"></param>
         /// <param name="filter"></param>
         /// <returns></returns>
-        public OsmGeoCollection GetCollection(GeoCoordinateBox box, Filter filter)
+        public OsmGeoCollection GetCollection(GeoCoordinateBox box, Filter filter = null)
         {
             var geos = Get(box, filter);
             var collection = new OsmGeoCollection();
