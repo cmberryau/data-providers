@@ -17,7 +17,7 @@
 // along with OsmSharp. If not, see <http://www.gnu.org/licenses/>.
 
 using OsmSharp.Osm.Data;
-using System.Data.SQLite;
+using Mono.Data.Sqlite;
 
 namespace OsmSharp.Data.SQLite.Osm
 {
@@ -193,12 +193,12 @@ namespace OsmSharp.Data.SQLite.Osm
         /// <param name="connection">The SQLite connection to attempt to detect on</param>
         /// <param name="table_name">The SQLite table to detect</param>
         /// <returns>true if table exists</returns>
-        private static bool DetectTable(SQLiteConnection connection, string table_name)
+        private static bool DetectTable(SqliteConnection connection, string table_name)
         {
             var sql_string = string.Format(TABLE_DETECT, table_name);
 
             long count = 0;
-            using (var command = new SQLiteCommand(sql_string, connection))
+            using (var command = new SqliteCommand(sql_string, connection))
             {
                 count = (long)command.ExecuteScalar();
             }
@@ -213,12 +213,12 @@ namespace OsmSharp.Data.SQLite.Osm
         /// <param name="table_name">The SQLite table to detect on</param>
         /// <param name="index_name">The SQLite index to detect</param>
         /// <returns>true if index exists</returns>
-        private static bool DetectIndex(SQLiteConnection connection, string table_name, string index_name)
+        private static bool DetectIndex(SqliteConnection connection, string table_name, string index_name)
         {
             var sql_string = string.Format(INDEX_DETECT, table_name, index_name);
 
             long count = 0;
-            using (var command = new SQLiteCommand(sql_string, connection))
+            using (var command = new SqliteCommand(sql_string, connection))
             {
                 count = (long)command.ExecuteScalar();
             }
@@ -231,7 +231,7 @@ namespace OsmSharp.Data.SQLite.Osm
         /// </summary>
         /// <param name="connection">The SQLite connection to attempt the drop on</param>
         /// <param name="table_name">The SQLite table to drop the index from</param>
-        private static void DropTable(SQLiteConnection connection, string table_name)
+        private static void DropTable(SqliteConnection connection, string table_name)
         {
             var sql_string = string.Format(TABLE_DROP, table_name);
 
@@ -244,7 +244,7 @@ namespace OsmSharp.Data.SQLite.Osm
         /// <param name="connection">The SQLite connection to attempt the drop on</param>
         /// <param name="table_name">The SQLite table to drop</param>
         /// <param name="index_name">The SQLite index to drop</param>
-        private static void DropIndex(SQLiteConnection connection, string table_name, string index_name)
+        private static void DropIndex(SqliteConnection connection, string table_name, string index_name)
         {
             var sql_string = string.Format(INDEX_DROP, index_name);
 
@@ -256,150 +256,150 @@ namespace OsmSharp.Data.SQLite.Osm
         /// </summary>
         /// <param name="connection"></param>
         /// <param name="sql"></param>     
-        private static void ExecuteScript(SQLiteConnection connection, string sql)
+        private static void ExecuteScript(SqliteConnection connection, string sql)
         {
-            using (var command = new SQLiteCommand(sql, connection))
+            using (var command = new SqliteCommand(sql, connection))
             {
                 command.ExecuteNonQuery();
             }
         }
 
-        private static bool DetectNodeTable(SQLiteConnection connection)
+        private static bool DetectNodeTable(SqliteConnection connection)
         {
             return SQLiteSchemaTools.DetectTable(connection, "node");
         }
 
-        private static bool DetectNodeTagsTable(SQLiteConnection connection)
+        private static bool DetectNodeTagsTable(SqliteConnection connection)
         {
             return SQLiteSchemaTools.DetectTable(connection, "node_tags");
         }
 
-        private static bool DetectWayTable(SQLiteConnection connection)
+        private static bool DetectWayTable(SqliteConnection connection)
         {
             return SQLiteSchemaTools.DetectTable(connection, "way");
         }
 
-        private static bool DetectWayTagsTable(SQLiteConnection connection)
+        private static bool DetectWayTagsTable(SqliteConnection connection)
         {
             return SQLiteSchemaTools.DetectTable(connection, "way_tags");
         }
 
-        private static bool DetectWayNodesTable(SQLiteConnection connection)
+        private static bool DetectWayNodesTable(SqliteConnection connection)
         {
             return SQLiteSchemaTools.DetectTable(connection, "way_nodes");
         }
 
-        private static bool DetectRelationTable(SQLiteConnection connection)
+        private static bool DetectRelationTable(SqliteConnection connection)
         {
             return SQLiteSchemaTools.DetectTable(connection, "relation");
         }
 
-        private static bool DetectRelationTagsTable(SQLiteConnection connection)
+        private static bool DetectRelationTagsTable(SqliteConnection connection)
         {
             return SQLiteSchemaTools.DetectTable(connection, "relation_tags");
         }
 
-        private static bool DetectRelationMembersTable(SQLiteConnection connection)
+        private static bool DetectRelationMembersTable(SqliteConnection connection)
         {
             return SQLiteSchemaTools.DetectTable(connection, "relation_members");
         }
 
-        private static bool DetectUniqueNodeTagsTable(SQLiteConnection connection)
+        private static bool DetectUniqueNodeTagsTable(SqliteConnection connection)
         {
             return SQLiteSchemaTools.DetectTable(connection, "node_tags");
         }
 
-        private static bool DetectUniqueWayTagsTable(SQLiteConnection connection)
+        private static bool DetectUniqueWayTagsTable(SqliteConnection connection)
         {
             return SQLiteSchemaTools.DetectTable(connection, "way_tags");
         }
 
-        private static bool DetectUniqueRelationTagsTable(SQLiteConnection connection)
+        private static bool DetectUniqueRelationTagsTable(SqliteConnection connection)
         {
             return SQLiteSchemaTools.DetectTable(connection, "relation_tags");
         }
 
-        private static void CreateNodeTable(SQLiteConnection connection)
+        private static void CreateNodeTable(SqliteConnection connection)
         {
             SQLiteSchemaTools.ExecuteScript(connection, TABLE_NODE_CREATE);
         }
 
-        private static void CreateNodeTagsTable(SQLiteConnection connection)
+        private static void CreateNodeTagsTable(SqliteConnection connection)
         {
             SQLiteSchemaTools.ExecuteScript(connection, TABLE_NODE_TAGS_CREATE);
         }
 
-        private static void CreateWayTable(SQLiteConnection connection)
+        private static void CreateWayTable(SqliteConnection connection)
         {
             SQLiteSchemaTools.ExecuteScript(connection, TABLE_WAY_CREATE);
         }
 
-        private static void CreateWayTagsTable(SQLiteConnection connection)
+        private static void CreateWayTagsTable(SqliteConnection connection)
         {
             SQLiteSchemaTools.ExecuteScript(connection, TABLE_WAY_TAGS_CREATE);
         }
 
-        private static void CreateWayNodesTable(SQLiteConnection connection)
+        private static void CreateWayNodesTable(SqliteConnection connection)
         {
             SQLiteSchemaTools.ExecuteScript(connection, TABLE_WAY_NODES_CREATE);
         }
 
-        private static void CreateRelationTable(SQLiteConnection connection)
+        private static void CreateRelationTable(SqliteConnection connection)
         {
             SQLiteSchemaTools.ExecuteScript(connection, TABLE_RELATION_CREATE);
         }
 
-        private static void CreateRelationTagsTable(SQLiteConnection connection)
+        private static void CreateRelationTagsTable(SqliteConnection connection)
         {
             SQLiteSchemaTools.ExecuteScript(connection, TABLE_RELATION_TAGS_CREATE);
         }
 
-        private static void CreateRelationMembersTable(SQLiteConnection connection)
+        private static void CreateRelationMembersTable(SqliteConnection connection)
         {
             SQLiteSchemaTools.ExecuteScript(connection, TABLE_RELATION_MEMBERS_CREATE);
         }
 
-        private static bool DetectNodeTileIndex(SQLiteConnection connection)
+        private static bool DetectNodeTileIndex(SqliteConnection connection)
         {
             return SQLiteSchemaTools.DetectIndex(connection, "node", "IDX_NODE_TILE");
         }
 
-        private static bool DetectWayNodesNodeIndex(SQLiteConnection connection)
+        private static bool DetectWayNodesNodeIndex(SqliteConnection connection)
         {
             return SQLiteSchemaTools.DetectIndex(connection, "way_nodes", "IDX_WAY_NODES_NODE");
         }
 
-        private static bool DetectWayNodesWaySequenceIndex(SQLiteConnection connection)
+        private static bool DetectWayNodesWaySequenceIndex(SqliteConnection connection)
         {
             return SQLiteSchemaTools.DetectIndex(connection, "way_nodes", "IDX_WAY_NODES_WAY_SEQUENCE");
         }
 
-        private static bool DetectRelationMembersMemberTypeSequenceIndex(SQLiteConnection connection)
+        private static bool DetectRelationMembersMemberTypeSequenceIndex(SqliteConnection connection)
         {
             return SQLiteSchemaTools.DetectIndex(connection, "relation_members", "IDX_RELATION_MEMBERS_MEMBER_TYPE_SEQUENCE");
         }
 
-        private static void CreateNodeTileIndex(SQLiteConnection connection)
+        private static void CreateNodeTileIndex(SqliteConnection connection)
         {
             SQLiteSchemaTools.ExecuteScript(connection, INDEX_NODE_TILE_CREATE);
         }
 
-        private static void CreateWayNodesNodeIndex(SQLiteConnection connection)
+        private static void CreateWayNodesNodeIndex(SqliteConnection connection)
         {
             SQLiteSchemaTools.ExecuteScript(connection, INDEX_WAY_NODES_NODE_CREATE);
         }
 
-        private static void CreateWayNodesWaySequenceIndex(SQLiteConnection connection)
+        private static void CreateWayNodesWaySequenceIndex(SqliteConnection connection)
         {
             SQLiteSchemaTools.ExecuteScript(connection, INDEX_WAY_NODES_WAY_SEQUENCE_CREATE);
         }
 
-        private static void CreateRelationMembersMemberTypeSequenceIndex(SQLiteConnection connection)
+        private static void CreateRelationMembersMemberTypeSequenceIndex(SqliteConnection connection)
         {
             SQLiteSchemaTools.ExecuteScript(connection, INDEX_RELATION_MEMBERS_MEMBER_TYPE_SEQUENCE_CREATE);
         }
 
-        private static void DetectAndCreateIndexes(SQLiteConnection connection)
+        private static void DetectAndCreateIndexes(SqliteConnection connection)
         {
             if (!DetectNodeTileIndex(connection))
             {
@@ -436,11 +436,11 @@ namespace OsmSharp.Data.SQLite.Osm
         internal static string BuildConnectionString(bool in_memory, string path = null,
                                                      string password = null, bool compressed = true)
         {
-            var connection_string = "FullUri=file:";
+            var connection_string = "Data Source=";
 
             if (in_memory)
             {
-                connection_string += ":memory:?cache=shared;";
+                connection_string = "URI=file::memory:,";
             }
             else
             {
@@ -454,7 +454,7 @@ namespace OsmSharp.Data.SQLite.Osm
                 }
             }
 
-            connection_string += "Version=3;";
+            connection_string += "version=3;";
 
             if (password != null)
             {
@@ -488,8 +488,8 @@ namespace OsmSharp.Data.SQLite.Osm
         /// <summary>
         /// Creates the entire schema but also detects existing tables.
         /// </summary>
-        /// <param name="connection">The SQLiteConnection to perform detection and creation on</param>
-        public static void CreateAndDetect(SQLiteConnection connection)
+        /// <param name="connection">The SqliteConnection to perform detection and creation on</param>
+        public static void CreateAndDetect(SqliteConnection connection)
         {
             if (!DetectNodeTable(connection))
             {
@@ -537,8 +537,8 @@ namespace OsmSharp.Data.SQLite.Osm
         /// <summary>
         /// Drops the entire schema.
         /// </summary>
-        /// <param name="connection">The SQLiteConnection to drop tables from</param>
-        public static void Drop(SQLiteConnection connection)
+        /// <param name="connection">The SqliteConnection to drop tables from</param>
+        public static void Drop(SqliteConnection connection)
         {
             if (DetectNodeTable(connection))
             {
@@ -596,7 +596,7 @@ namespace OsmSharp.Data.SQLite.Osm
             }
 
             // vacuum the db
-            using (var command = new SQLiteCommand(connection))
+            using (var command = new SqliteCommand(connection))
             {
                 command.CommandText = "VACUUM;";
                 command.ExecuteNonQuery();
@@ -606,14 +606,14 @@ namespace OsmSharp.Data.SQLite.Osm
         /// <summary>
         /// Post filters the entire DB
         /// </summary>
-        public static void PostFilter(SQLiteConnection connection)
+        public static void PostFilter(SqliteConnection connection)
         {
             if (DetectNodeTable(connection) && DetectNodeTagsTable(connection))
             {
                 ExecuteScript(connection, REMOVE_UNREFERENCED_UNTAGGED_NODES);
             }
 
-            using (var command = new SQLiteCommand(connection))
+            using (var command = new SqliteCommand(connection))
             {
                 command.CommandText = "VACUUM;";
                 command.ExecuteNonQuery();
